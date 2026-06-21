@@ -35,9 +35,7 @@ Settings take effect immediately and are saved automatically when you close the 
 
 ## Compatibility
 
-Largely untested. This plugin hooks `IDXGISwapChain::Present` to draw the overlay and `ReadFile`/`CreateFileW` to track load progress — the same techniques used by many SKSE overlays and ENBs. Conflicts are possible with other plugins that hook the same entry points.
-
-Your antivirus may flag this DLL as suspicious. This is a false positive — SKSE plugins routinely hook Windows and DirectX APIs as a core part of how they work. The source code is available on [GitHub](https://github.com/parkerchace/SkyrimLoadingPercent).
+Largely untested. This plugin hooks `IDXGISwapChain::Present` to draw the overlay and `ReadFile`/`CreateFileW` to track load progress — the same techniques used by many SKSE overlays and ENBs. Conflicts are possible with other plugins that hook the same entry points. Source code is available on [GitHub](https://github.com/parkerchace/SkyrimLoadingPercent).
 
 ## Libraries used
 
