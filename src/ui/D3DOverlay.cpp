@@ -1371,24 +1371,10 @@ static void DrawConfigMenu() {
             }
 
             ImGui::Separator();
-            ImGui::TextDisabled("Opacity lets Skyrim's art show through.");
+            ImGui::TextDisabled("Changes are live and saved automatically.");
             ImGui::Spacing();
 
-            if (ImGui::Button("Save to INI")) {
-                cfg.Save();
-                ImGui::OpenPopup("Saved!");
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Close")) { g_cfgOpen = false; }
-
-            if (ImGui::BeginPopup("Saved!")) {
-                ImGui::TextUnformatted("Settings written to SkyrimLoadingPercent.ini");
-                if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
-            }
-
-            ImGui::Spacing();
-            ImGui::TextDisabled("Changes are live - no restart required.");
+            if (ImGui::Button("Close")) { cfg.Save(); g_cfgOpen = false; }
 
             // Right column: live preview
             ImGui::TableNextColumn();
@@ -1470,7 +1456,7 @@ static void DrawConfigMenu() {
     ImGui::End();
     ImGui::PopStyleColor(3);
 
-    if (!open) g_cfgOpen = false;
+    if (!open) { Settings::GetSingleton().Save(); g_cfgOpen = false; }
 }
 
 //
