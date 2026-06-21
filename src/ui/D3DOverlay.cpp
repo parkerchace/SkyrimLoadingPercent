@@ -7,6 +7,7 @@
 #include <dxgi.h>
 #include <chrono>
 #include <cmath>
+#include <thread>
 
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
@@ -1542,11 +1543,12 @@ static void DrawOverlay() {
         if (s_display >= 100.0f) {
             s_loading  = false;
             s_draining = false;
-            // Persist calibration data so the next session starts with a real estimate.
+            // Persist calibration data on a background thread — SaveCache does
+            // disk I/O (ini.LoadFile + ini.SaveFile) which must not block Present.
             LONGLONG actual = tracker.GetLastLoadBytes();
             if (actual > 0) {
                 cfg.lastStreamCount = static_cast<uint64_t>(actual);
-                cfg.SaveCache();
+                std::thread([] { Settings::GetSingleton().SaveCache(); }).detach();
             }
             // Do NOT return — let the draw happen at 100% this frame.
             // Next frame: !s_loading && !s_draining -> early exit + s_display reset.

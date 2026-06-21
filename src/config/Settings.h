@@ -1,5 +1,4 @@
 #pragma once
-#include <unordered_map>
 
 class Settings {
 public:
@@ -10,9 +9,9 @@ public:
 
     void Load();
     void Save();
-    void SaveCache();   // persists calibration data without touching user-visible keys
+    void SaveCache();   // persists byte-calibration data without touching user-visible keys
 
-    // Which animation to display (0–19)
+    // Which animation to display (0-19)
     int  animStyle{ 1 };
     bool randomStyle{ false };  // pick a random style on each load
 
@@ -32,12 +31,9 @@ public:
     // Widget opacity: 1.0 = opaque, lower lets Skyrim's art show through
     float overlayAlpha{ 1.0f };
 
-    float    lastLoadDuration{ 2.0f };  // seconds; fallback when no per-location data
-    uint64_t lastStreamCount{ 0 };      // global fallback stream count
-
-    // Per-destination calibration: BGSLocation FormID → stream count for that load.
-    // Populated after each load completes.  First visit uses the global fallback.
-    std::unordered_map<uint32_t, uint64_t> locationCalib;
+    // Bytes read during the last completed load — used as denominator for GetProgress().
+    // Persisted so the first load of each session has a real estimate.
+    uint64_t lastStreamCount{ 0 };
 
     static constexpr auto kIniPath = L"Data/SKSE/Plugins/SkyrimLoadingPercent.ini";
 

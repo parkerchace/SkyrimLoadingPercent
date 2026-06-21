@@ -2,8 +2,7 @@
 
 #include <atomic>
 #include <mutex>
-#include <string>
-#include <unordered_map>
+#include <unordered_set>
 
 enum class LoadPhase {
     Idle,        // No loading screen active
@@ -36,7 +35,7 @@ public:
     // Called from the CloseHandle hook
     void OnFileClosed(HANDLE hFile);
 
-    // Thread-safe read; returns 0.0–100.0
+    // Thread-safe read; returns 0.0-100.0
     float GetProgress() const noexcept;
 
     LoadPhase GetPhase() const noexcept { return m_phase.load(std::memory_order_relaxed); }
@@ -53,18 +52,13 @@ private:
     ProgressTracker(const ProgressTracker&) = delete;
     ProgressTracker& operator=(const ProgressTracker&) = delete;
 
-    struct FileEntry {
-        std::wstring path;
-        LONGLONG totalBytes{ 0 };
-    };
-
     static bool IsDataFile(std::wstring_view path) noexcept;
 
     std::atomic<LoadPhase> m_phase{ LoadPhase::Idle };
 
-    // Handles table: populated from game start, never cleared during tracking
-    mutable std::mutex                    m_mutex;
-    std::unordered_map<HANDLE, FileEntry> m_handles;
+    // Set of data-file handles currently open; populated from game start
+    mutable std::mutex         m_mutex;
+    std::unordered_set<HANDLE> m_handles;
 
     // Lifetime byte counter — incremented for every tracked-handle ReadFile call
     std::atomic<LONGLONG> m_sessionBytes{ 0 };
@@ -72,7 +66,7 @@ private:
     // Snapshot of m_sessionBytes when tracking began for the current load
     std::atomic<LONGLONG> m_sessionAtStart{ 0 };
 
-    // How many bytes the previous load consumed (used as denominator)
-    // Default 20 MB — updated after each completed load
-    std::atomic<LONGLONG> m_lastLoadBytes{ 20LL * 1024 * 1024 };
+    // How many bytes the previous load consumed (denominator for GetProgress).
+    // 0 until first load completes — GetProgress returns 0 which triggers time-curve fallback.
+    std::atomic<LONGLONG> m_lastLoadBytes{ 0 };
 };

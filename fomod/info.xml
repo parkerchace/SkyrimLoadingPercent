@@ -1,0 +1,7 @@
+<fomod>
+    <Name>Skyrim Loading Percent</Name>
+    <Author>Parker Chace</Author>
+    <Version>1.0.0</Version>
+    <Description>Adds a live loading animation and real-time progress bar to Skyrim SE/AE loading screens. 20 hand-coded animations, fully configurable in-game. Requires SKSE64.</Description>
+    <Website>https://github.com/parkerchace/SkyrimLoadingPercent</Website>
+</fomod>

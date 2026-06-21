@@ -52,10 +52,7 @@ void ProgressTracker::OnFileOpened(HANDLE hFile, const wchar_t* rawPath, LONGLON
     if (totalBytes <= 0) return;
 
     std::lock_guard lock(m_mutex);
-    FileEntry entry;
-    entry.path       = rawPath;
-    entry.totalBytes = totalBytes;
-    m_handles.emplace(hFile, std::move(entry));
+    m_handles.emplace(hFile);
 }
 
 void ProgressTracker::OnBytesRead(HANDLE hFile, DWORD bytesRead) {
@@ -66,7 +63,7 @@ void ProgressTracker::OnBytesRead(HANDLE hFile, DWORD bytesRead) {
 
     {
         std::lock_guard lock(m_mutex);
-        if (m_handles.find(hFile) == m_handles.end()) return;
+        if (!m_handles.count(hFile)) return;
     }
     m_sessionBytes.fetch_add(static_cast<LONGLONG>(bytesRead), std::memory_order_relaxed);
 }

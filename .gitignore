@@ -1,13 +1,12 @@
 # Build output
 build/
-*.dll
+dist/
 *.lib
 *.exp
 *.pdb
 
-# Third-party dev tools (not part of the plugin)
-tools/jpexs/
-tools/mtasc/
+# Dev tools — not part of the plugin
+tools/
 
 # Claude Code local settings
 .claude/
