@@ -1646,8 +1646,9 @@ static void DrawOverlay() {
         }
     }
 
-    // Once both conditions clear, end the loading state
-    if (!s_draining && !s_lingering && !s_awaitingKey)
+    // Once post-drain hold conditions clear, end the loading state.
+    // Guard on s_display >= 100 so this doesn't fire during normal tracking.
+    if (s_display >= 100.0f && !s_draining && !s_lingering && !s_awaitingKey)
         s_loading = false;
 
     // Position
