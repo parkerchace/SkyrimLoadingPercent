@@ -53,8 +53,11 @@ static float s_display  = 0.0f;  // the percentage shown on screen (0-100)
 static int   s_tick     = 0;     // frame counter, used to drive time-based animation
 static bool  s_loading  = false; // true while a loading screen is active
 static bool  s_draining = false; // true when load is done but bar hasn't reached 100% yet
+static bool  s_lingering   = false; // post-100% linger timer active
+static bool  s_awaitingKey = false; // post-100% waiting for keypress
 static LoadPhase s_prevPhase = LoadPhase::Idle; // tracks previous load phase to detect transitions
 static std::chrono::steady_clock::time_point s_start;
+static std::chrono::steady_clock::time_point s_lingerStart;
 
 static int       s_loadIndex    = 0;     // counts total loads this session
 static int       s_activeStyle  = 0;     // animation style for the current load (random mode can change this)
@@ -1327,7 +1330,6 @@ static void DrawConfigMenu() {
     ImGui::PushStyleColor(ImGuiCol_WindowBg,      ImVec4(0.08f,0.08f,0.10f,0.95f));
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive,  ImVec4(0.16f,0.14f,0.08f,1.0f));
     ImGui::PushStyleColor(ImGuiCol_ChildBg,        ImVec4(0.04f,0.04f,0.07f,1.0f));
-
     auto& cfg = Settings::GetSingleton();
     bool open = true;
     std::string winTitle = "Loading Progress  ( " + VKName(cfg.menuKey) + " closes )";
@@ -1412,6 +1414,21 @@ static void DrawConfigMenu() {
                 if (ImGui::Button(label.c_str(), ImVec2(200, 0)))
                     g_capturingMenuKey = true;
             }
+
+            ImGui::Separator();
+
+            // Post-load hold / linger options
+            ImGui::Checkbox("Hold screen until keypress", &cfg.holdScreen);
+            if (cfg.holdScreen) {
+                static const char* promptPositions[] = {
+                    "Bottom-Right", "Bottom-Left", "Bottom-Center",
+                    "Top-Right",    "Top-Left",    "Center"
+                };
+                ImGui::SetNextItemWidth(200);
+                ImGui::Combo("Prompt position", &cfg.promptPosition, promptPositions, 6);
+            }
+            ImGui::SetNextItemWidth(200);
+            ImGui::SliderInt("Linger after 100%  (sec)", &cfg.lingerSeconds, 0, 30);
 
             ImGui::Spacing();
             ImGui::TextDisabled("Changes are live and saved automatically.");
@@ -1556,7 +1573,7 @@ static void DrawOverlay() {
     s_prevPhase = phase;
 
     // EARLY EXIT
-    if (!s_loading && !s_draining) {
+    if (!s_loading && !s_draining && !s_lingering && !s_awaitingKey) {
         s_display = 0.0f;
         return;
     }
@@ -1569,7 +1586,6 @@ static void DrawOverlay() {
         float remaining = 100.0f - s_display;
         s_display = std::min(s_display + std::max(0.8f, remaining * 0.05f), 100.0f);
         if (s_display >= 100.0f) {
-            s_loading  = false;
             s_draining = false;
             // Persist calibration data on a background thread — SaveCache does
             // disk I/O (ini.LoadFile + ini.SaveFile) which must not block Present.
@@ -1578,8 +1594,14 @@ static void DrawOverlay() {
                 cfg.lastStreamCount = static_cast<uint64_t>(actual);
                 std::thread([] { Settings::GetSingleton().SaveCache(); }).detach();
             }
-            // Do NOT return — let the draw happen at 100% this frame.
-            // Next frame: !s_loading && !s_draining -> early exit + s_display reset.
+            if (cfg.lingerSeconds > 0 && !s_lingering) {
+                s_lingering   = true;
+                s_lingerStart = std::chrono::steady_clock::now();
+            }
+            if (cfg.holdScreen && !s_awaitingKey)
+                s_awaitingKey = true;
+            if (!s_lingering && !s_awaitingKey)
+                s_loading = false;
         }
     } else {
         // Real I/O byte progress from the ReadFile hook.
@@ -1605,6 +1627,29 @@ static void DrawOverlay() {
         }
     }
 
+    // Linger tick
+    if (s_lingering) {
+        float lingerElapsed = std::chrono::duration<float>(
+            std::chrono::steady_clock::now() - s_lingerStart).count();
+        if (lingerElapsed >= static_cast<float>(cfg.lingerSeconds))
+            s_lingering = false;
+    }
+
+    // Key-await tick — any key (except mouse buttons) dismisses
+    if (s_awaitingKey) {
+        for (int vk = 0x08; vk <= 0xFE; vk++) {
+            if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == VK_MBUTTON) continue;
+            if (GetAsyncKeyState(vk) & 0x8000) {
+                s_awaitingKey = false;
+                break;
+            }
+        }
+    }
+
+    // Once both conditions clear, end the loading state
+    if (!s_draining && !s_lingering && !s_awaitingKey)
+        s_loading = false;
+
     // Position
     ImVec2 screen = ImGui::GetIO().DisplaySize;
     float  sc     = cfg.scale * (screen.y / 720.0f);
@@ -1624,6 +1669,11 @@ static void DrawOverlay() {
 
     // Apply opacity from settings
     g_animAlpha = cfg.overlayAlpha;
+
+    // Cover the already-loaded game world during linger / key-wait
+    if (s_lingering || s_awaitingKey) {
+        dl->AddRectFilled({ 0, 0 }, screen, IM_COL32(0, 0, 0, 255));
+    }
 
     switch (s_activeStyle) {
         case 0:  Anim_CircleFill   (dl, centre, sc, s_display, float(s_tick), col); break;
@@ -1660,6 +1710,30 @@ static void DrawOverlay() {
         ImVec2 tp { centre.x - ts.x * 0.5f, ty };
         dl->AddText(nullptr, fontSize, tp,
                     IM_COL32(255,255,255,static_cast<int>(220*cfg.overlayAlpha)), buf);
+    }
+
+    // "Press any key to continue" prompt
+    if (s_awaitingKey) {
+        constexpr const char* kPrompt = "Press any key to continue";
+        float promptSize = (std::max)(14.0f, 22.0f * (screen.y / 1080.0f));
+        float pulse      = sinf(static_cast<float>(s_tick) * 0.04f) * 0.5f + 0.5f;
+        ImU32 promptCol  = IM_COL32(255, 255, 255, static_cast<int>(200 * pulse));
+        ImVec2 pts = ImGui::CalcTextSize(kPrompt, nullptr, false, 0.0f);
+        // Scale text size estimate for non-default font size
+        pts.x *= promptSize / ImGui::GetFontSize();
+        pts.y *= promptSize / ImGui::GetFontSize();
+
+        float margin2 = 60.0f;
+        ImVec2 pp;
+        switch (cfg.promptPosition) {
+            case 0: pp = { screen.x - pts.x - margin2, screen.y - pts.y - margin2 }; break; // BR
+            case 1: pp = { margin2,                    screen.y - pts.y - margin2 }; break; // BL
+            case 2: pp = { screen.x*0.5f - pts.x*0.5f,screen.y - pts.y - margin2 }; break; // BC
+            case 3: pp = { screen.x - pts.x - margin2, margin2                   }; break; // TR
+            case 4: pp = { margin2,                    margin2                   }; break; // TL
+            default:pp = { screen.x*0.5f - pts.x*0.5f,screen.y*0.5f + 120.0f   }; break; // Center
+        }
+        dl->AddText(nullptr, promptSize, pp, promptCol, kPrompt);
     }
 }
 

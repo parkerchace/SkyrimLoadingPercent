@@ -16,6 +16,10 @@ Parker Chace
 
 - [SKSE64](https://skse.silverlock.org/) — Skyrim Script Extender
 
+## Community
+
+- **Kreorporus** (Nexus Mods) — suggested the hold-screen-until-keypress and linger-timer features
+
 ## Assistance
 
 Built with [Claude Code](https://claude.ai/code) (Anthropic).

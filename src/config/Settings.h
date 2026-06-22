@@ -38,6 +38,15 @@ public:
     // Virtual key code for the menu toggle key. Default 220 = VK_OEM_5 = backslash on US layouts.
     int menuKey{ 220 };
 
+    // Hold the overlay on screen after 100% until the player presses a key
+    bool holdScreen{ false };
+
+    // Extra seconds to stay at 100% before the overlay exits (0 = off)
+    int lingerSeconds{ 0 };
+
+    // Where to draw "Press any key to continue" (0-4 same as position; 5 = center)
+    int promptPosition{ 5 };
+
     static constexpr auto kIniPath = L"Data/SKSE/Plugins/SkyrimLoadingPercent.ini";
 
 private:

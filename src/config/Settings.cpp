@@ -38,6 +38,14 @@ void Settings::Load() {
         static_cast<int>(ini.GetLongValue("General", "iMenuKey", menuKey)),
         1, 254);
 
+    holdScreen     = ini.GetBoolValue ("General", "bHoldScreen",     holdScreen);
+    lingerSeconds  = std::clamp(
+        static_cast<int>(ini.GetLongValue("General", "iLingerSeconds", lingerSeconds)),
+        0, 120);
+    promptPosition = std::clamp(
+        static_cast<int>(ini.GetLongValue("General", "iPromptPosition", promptPosition)),
+        0, 5);
+
     logger::info("Settings loaded: style={} pos={} showPct={} scale={:.2f} streams={}",
         animStyle, position, showPercent, scale, lastStreamCount);
 }
@@ -51,6 +59,9 @@ void Settings::Save() {
     ini.SetBoolValue  ("General", "bRandomStyle",     randomStyle);
     ini.SetLongValue  ("General", "iPosition",        position);
     ini.SetLongValue  ("General", "iMenuKey",         menuKey);
+    ini.SetBoolValue  ("General", "bHoldScreen",      holdScreen);
+    ini.SetLongValue  ("General", "iLingerSeconds",   lingerSeconds);
+    ini.SetLongValue  ("General", "iPromptPosition",  promptPosition);
     ini.SetBoolValue  ("Display", "bShowPercentage",  showPercent);
     ini.SetDoubleValue("Display", "fScale",           static_cast<double>(scale));
     ini.SetDoubleValue("Display", "fOverlayAlpha",    static_cast<double>(overlayAlpha));
