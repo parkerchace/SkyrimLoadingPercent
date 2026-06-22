@@ -26,7 +26,25 @@ Remove `SkyrimLoadingPercent.dll` and `SkyrimLoadingPercent.ini` from `Data/SKSE
 |-----|--------|
 | `\` (default) | Open / close the settings menu |
 
-The toggle key defaults to `\` (backslash). If that key is awkward on your keyboard layout, rebind it inside the menu or set `iMenuKey` in the INI to any [Windows virtual key code](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes) before launching.
+The toggle key defaults to `\` (backslash). If that key is awkward on your keyboard layout, rebind it inside the menu or set `iMenuKey` in the INI to any of these numbers before launching:
+
+| Key | Number | Key | Number |
+|-----|--------|-----|--------|
+| `\` (default) | 220 | F1  | 112 |
+| `` ` `` / `~` | 192 | F2  | 113 |
+| `-`            | 189 | F3  | 114 |
+| `=`            | 187 | F4  | 115 |
+| Tab            | 9   | F5  | 116 |
+| Caps Lock      | 20  | F6  | 117 |
+| Insert         | 45  | F7  | 118 |
+| Delete         | 46  | F8  | 119 |
+| Home           | 36  | F9  | 120 |
+| End            | 35  | F10 | 121 |
+| Page Up        | 33  | F11 | 122 |
+| Page Down      | 34  | F12 | 123 |
+| Numpad 0–9     | 96–105 | | |
+
+For any key not listed: https://www.rbase.com/support/rsyntax/virtual_keycodes.html
 
 Settings take effect immediately and are saved automatically when you close the menu.
 
