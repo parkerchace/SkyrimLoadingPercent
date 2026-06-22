@@ -30,8 +30,9 @@ static HWND          g_hwnd          = nullptr; // game window handle, used for 
 static UINT          g_width         = 1280;
 static UINT          g_height        = 720;
 
-static bool          g_cfgOpen       = false;   // is the settings menu open?
-static bool          g_prevBackslash = false;   // tracks backslash key state for toggle
+static bool          g_cfgOpen          = false; // is the settings menu open?
+static bool          g_prevMenuKey      = false; // previous state of the toggle key
+static bool          g_capturingMenuKey = false; // waiting for user to press a new key
 
 // Function pointer types for the two D3D functions we hook.
 // We save the originals so we can call them after our code runs.
@@ -74,6 +75,18 @@ static float g_animAlpha = 1.0f;
 static ImU32 Col(uint32_t rgb, float a = 1.0f) {
     return IM_COL32((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF,
                     static_cast<int>(a * g_animAlpha * 255));
+}
+
+// Returns the locale-aware display name for a Windows virtual key code.
+static std::string VKName(int vk) {
+    UINT sc = MapVirtualKeyW(static_cast<UINT>(vk), MAPVK_VK_TO_VSC);
+    if (sc == 0) return "?";
+    wchar_t buf[64]{};
+    GetKeyNameTextW(static_cast<LONG>(sc << 16), buf, 64);
+    if (buf[0] == 0) return "?";
+    std::string out;
+    for (wchar_t c : buf) { if (!c) break; out += static_cast<char>(c); }
+    return out;
 }
 
 static void FilledArc(ImDrawList* dl, ImVec2 c, float r,
@@ -1314,11 +1327,11 @@ static void DrawConfigMenu() {
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive,  ImVec4(0.16f,0.14f,0.08f,1.0f));
     ImGui::PushStyleColor(ImGuiCol_ChildBg,        ImVec4(0.04f,0.04f,0.07f,1.0f));
 
+    auto& cfg = Settings::GetSingleton();
     bool open = true;
-    if (ImGui::Begin("Loading Progress  ( \\ closes )", &open,
+    std::string winTitle = "Loading Progress  ( " + VKName(cfg.menuKey) + " closes )";
+    if (ImGui::Begin(winTitle.c_str(), &open,
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
-
-        auto& cfg = Settings::GetSingleton();
 
         if (ImGui::BeginTable("##layout", 2, 0)) {
             ImGui::TableSetupColumn("##ctrl",    ImGuiTableColumnFlags_WidthFixed, 350.0f);
@@ -1371,6 +1384,35 @@ static void DrawConfigMenu() {
             }
 
             ImGui::Separator();
+
+            // Key rebinding
+            ImGui::Text("Menu key:");
+            ImGui::SameLine();
+            if (g_capturingMenuKey) {
+                ImGui::Button("Press any key...", ImVec2(200, 0));
+                // Escape cancels
+                if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+                    g_capturingMenuKey = false;
+                    g_prevMenuKey = true;
+                } else {
+                    for (int vk = 0x08; vk <= 0xFE; vk++) {
+                        if (vk == VK_ESCAPE  || vk == VK_LBUTTON ||
+                            vk == VK_RBUTTON || vk == VK_MBUTTON) continue;
+                        if (GetAsyncKeyState(vk) & 0x8000) {
+                            cfg.menuKey       = vk;
+                            g_capturingMenuKey = false;
+                            g_prevMenuKey      = true; // prevent immediate retrigger
+                            break;
+                        }
+                    }
+                }
+            } else {
+                std::string label = VKName(cfg.menuKey) + "  (click to rebind)";
+                if (ImGui::Button(label.c_str(), ImVec2(200, 0)))
+                    g_capturingMenuKey = true;
+            }
+
+            ImGui::Spacing();
             ImGui::TextDisabled("Changes are live and saved automatically.");
             ImGui::Spacing();
 
@@ -1671,10 +1713,13 @@ static HRESULT WINAPI Hook_Present(IDXGISwapChain* chain, UINT sync, UINT flags)
         if (desc.BufferDesc.Height) g_height = desc.BufferDesc.Height;
     }
 
-    // \ key — toggle config menu
-    bool curBackslash = (GetAsyncKeyState(VK_OEM_5) & 0x8000) != 0;
-    if (curBackslash && !g_prevBackslash) g_cfgOpen = !g_cfgOpen;
-    g_prevBackslash = curBackslash;
+    // Toggle key — configurable, default backslash. Skipped while rebinding.
+    auto& cfg = Settings::GetSingleton();
+    if (!g_capturingMenuKey) {
+        bool curKey = (GetAsyncKeyState(cfg.menuKey) & 0x8000) != 0;
+        if (curKey && !g_prevMenuKey) g_cfgOpen = !g_cfgOpen;
+        g_prevMenuKey = curKey;
+    }
 
     // Cursor management: clip mouse to window while config menu is open.
     // We do NOT touch ShowCursor — its reference counter is owned by the game.

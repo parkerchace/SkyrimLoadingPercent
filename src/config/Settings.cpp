@@ -34,6 +34,10 @@ void Settings::Load() {
         try { lastStreamCount = std::stoull(s); } catch (...) {}
     }
 
+    menuKey = std::clamp(
+        static_cast<int>(ini.GetLongValue("General", "iMenuKey", menuKey)),
+        1, 254);
+
     logger::info("Settings loaded: style={} pos={} showPct={} scale={:.2f} streams={}",
         animStyle, position, showPercent, scale, lastStreamCount);
 }
@@ -46,6 +50,7 @@ void Settings::Save() {
     ini.SetLongValue  ("General", "iAnimationStyle",  animStyle);
     ini.SetBoolValue  ("General", "bRandomStyle",     randomStyle);
     ini.SetLongValue  ("General", "iPosition",        position);
+    ini.SetLongValue  ("General", "iMenuKey",         menuKey);
     ini.SetBoolValue  ("Display", "bShowPercentage",  showPercent);
     ini.SetDoubleValue("Display", "fScale",           static_cast<double>(scale));
     ini.SetDoubleValue("Display", "fOverlayAlpha",    static_cast<double>(overlayAlpha));

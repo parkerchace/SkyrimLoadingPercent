@@ -35,6 +35,9 @@ public:
     // Persisted so the first load of each session has a real estimate.
     uint64_t lastStreamCount{ 0 };
 
+    // Virtual key code for the menu toggle key. Default 220 = VK_OEM_5 = backslash on US layouts.
+    int menuKey{ 220 };
+
     static constexpr auto kIniPath = L"Data/SKSE/Plugins/SkyrimLoadingPercent.ini";
 
 private:
