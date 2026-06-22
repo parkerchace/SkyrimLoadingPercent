@@ -1671,10 +1671,6 @@ static void DrawOverlay() {
     // Apply opacity from settings
     g_animAlpha = cfg.overlayAlpha;
 
-    // Cover the already-loaded game world during linger / key-wait
-    if (s_lingering || s_awaitingKey) {
-        dl->AddRectFilled({ 0, 0 }, screen, IM_COL32(0, 0, 0, 255));
-    }
 
     switch (s_activeStyle) {
         case 0:  Anim_CircleFill   (dl, centre, sc, s_display, float(s_tick), col); break;
