@@ -6,7 +6,7 @@ An SKSE plugin that draws a live loading screen animation and percentage indicat
 
 - 20 original hand-coded animations (constellation, standing stone, aurora borealis, alchemy cauldron, word wall, and more)
 - Live percentage readout that tracks real load progress via file I/O monitoring
-- Fully configurable in-game: press the toggle key (default `\`) to open the settings menu — settings save automatically on close
+- Fully configurable in-game: press the toggle key (default `\`) to open the settings menu - settings save automatically on close
 - Optional "random animation each load" mode
 - Position, color, scale, and opacity controls
 
