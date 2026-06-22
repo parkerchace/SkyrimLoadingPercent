@@ -2,6 +2,7 @@
 #include "D3DOverlay.h"
 #include "ProgressTracker.h"
 #include "config/Settings.h"
+#include "ui/ScaleformManager.h"
 
 #include <d3d11.h>
 #include <dxgi.h>
@@ -1648,8 +1649,12 @@ static void DrawOverlay() {
 
     // Once post-drain hold conditions clear, end the loading state.
     // Guard on s_display >= 100 so this doesn't fire during normal tracking.
-    if (s_display >= 100.0f && !s_draining && !s_lingering && !s_awaitingKey)
+    if (s_display >= 100.0f && !s_draining && !s_lingering && !s_awaitingKey) {
         s_loading = false;
+        // If the Loading Menu was held open for linger/hold, release it now.
+        // No-op when the hook was never installed (holdScreen=false, lingerSeconds=0).
+        ScaleformManager::ReleaseLoadingMenuHold();
+    }
 
     // Position
     ImVec2 screen = ImGui::GetIO().DisplaySize;
