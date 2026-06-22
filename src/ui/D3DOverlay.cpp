@@ -1322,6 +1322,7 @@ static void DrawConfigMenu() {
         ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
         ImGuiCond_Once, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(660, 360), ImGuiCond_Once);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(520, 280), ImVec2(FLT_MAX, FLT_MAX));
 
     ImGui::PushStyleColor(ImGuiCol_WindowBg,      ImVec4(0.08f,0.08f,0.10f,0.95f));
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive,  ImVec4(0.16f,0.14f,0.08f,1.0f));
@@ -1331,11 +1332,11 @@ static void DrawConfigMenu() {
     bool open = true;
     std::string winTitle = "Loading Progress  ( " + VKName(cfg.menuKey) + " closes )";
     if (ImGui::Begin(winTitle.c_str(), &open,
-                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+                     ImGuiWindowFlags_NoCollapse)) {
 
         if (ImGui::BeginTable("##layout", 2, 0)) {
             ImGui::TableSetupColumn("##ctrl",    ImGuiTableColumnFlags_WidthFixed, 350.0f);
-            ImGui::TableSetupColumn("##preview", ImGuiTableColumnFlags_WidthFixed, 268.0f);
+            ImGui::TableSetupColumn("##preview", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableNextRow();
 
             // Left column: controls
@@ -1425,8 +1426,7 @@ static void DrawConfigMenu() {
             float    prevP  = 50.0f + 50.0f * sinf(s_prevTick * 0.015f);
             uint32_t col    = cfg.color & 0x00FFFFFFu;
 
-            constexpr float kCanvasW = 258.0f, kCanvasH = 262.0f;
-            ImGui::BeginChild("##canvas", ImVec2(kCanvasW, kCanvasH), true,
+            ImGui::BeginChild("##canvas", ImGui::GetContentRegionAvail(), true,
                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
             ImVec2 cMin = ImGui::GetCursorScreenPos();
