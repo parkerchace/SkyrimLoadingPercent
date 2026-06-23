@@ -53,10 +53,17 @@ static CreateDevFn orig_CreateDev = nullptr;
 static float s_display  = 0.0f;  // the percentage shown on screen (0-100)
 static int   s_tick     = 0;     // frame counter, used to drive time-based animation
 static bool  s_loading  = false; // true while a loading screen is active
-static bool  s_draining = false; // true when load is done but bar hasn't reached 100% yet
+static bool  s_draining        = false; // true when load is done but bar hasn't reached 100% yet
+static bool  s_drainTriggered  = false; // latched per-load; prevents re-triggering after drain completes
 static bool  s_lingering   = false; // post-100% linger timer active
 static bool  s_awaitingKey = false; // post-100% waiting for keypress
 static LoadPhase s_prevPhase = LoadPhase::Idle; // tracks previous load phase to detect transitions
+
+// Byte-stall drain trigger: with bUserClosesLoadingMenu=1 the menu never auto-closes
+// on cell transitions, so byMenuClose never fires. Instead we watch the byte-progress
+// ratio and start drain once it hasn't changed for 2 seconds (loading thread done).
+static float s_stallFrames       = 0.0f;
+static float s_prevProgressStall = -1.0f;
 static std::chrono::steady_clock::time_point s_start;
 static std::chrono::steady_clock::time_point s_lingerStart;
 
@@ -1362,10 +1369,11 @@ static void DrawConfigMenu() {
 
             const char* positions[] = {
                 "Bottom-Right (default)", "Bottom-Left",
-                "Bottom-Center",          "Top-Right", "Top-Left"
+                "Bottom-Center",          "Top-Right",
+                "Top-Left",               "Top-Center"
             };
             ImGui::SetNextItemWidth(255);
-            ImGui::Combo("Position", &cfg.position, positions, 5);
+            ImGui::Combo("Position", &cfg.position, positions, 6);
 
             ImGui::SetNextItemWidth(255);
             ImGui::SliderFloat("Scale", &cfg.scale, 0.2f, 3.0f, "%.2f");
@@ -1543,32 +1551,55 @@ static void DrawOverlay() {
         srand(static_cast<unsigned>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 s_start.time_since_epoch()).count()));
-        s_constPattern = rand();
-        s_wallSeed     = rand();
-        s_crackSeed    = rand();
-        s_mountainSeed = rand();
-        s_activeStyle  = cfg.randomStyle ? (rand() % 20) : cfg.animStyle;
+        s_constPattern       = rand();
+        s_wallSeed           = rand();
+        s_crackSeed          = rand();
+        s_mountainSeed       = rand();
+        s_stallFrames        = 0.0f;
+        s_prevProgressStall  = -1.0f;
+        s_drainTriggered     = false;
+        s_activeStyle        = cfg.randomStyle ? (rand() % 20) : cfg.animStyle;
         logger::info("D3DOverlay: load animation started (#{:d}) style={:d}{}",
                      s_loadIndex, s_activeStyle, cfg.randomStyle ? " (random)" : "");
     }
 
-    // DRAIN TRIGGER
-    // kPostLoadGame (Complete) fires only for save-game loads.
-    // For all cell transitions the only signal is the menu closing (Tracking→Idle).
-    // Either way: switch to drain mode and fill proportionally to 100%,
-    // which completes during the loading-screen fade-out.
-    if (s_loading && !s_draining) {
-        bool byEvent    = (phase == LoadPhase::Complete);
+    // DRAIN TRIGGER — fires at most once per load (s_drainTriggered latch)
+    // 1. kPostLoadGame (Complete) — save-game loads
+    // 2. byMenuClose (Tracking→Idle) — cell transitions where menu auto-closes
+    // 3. byStall — cell transitions where kPostLoadGame doesn't fire: watch the
+    //    byte-progress ratio; when it stops moving for 2 s the load thread is done.
+    if (s_loading && !s_draining && !s_drainTriggered) {
+        bool byEvent     = (phase == LoadPhase::Complete);
         bool byMenuClose = (s_prevPhase == LoadPhase::Tracking
                             && phase     == LoadPhase::Idle);
-        if (byEvent || byMenuClose) {
-            if (byMenuClose) {
-                // Cell transitions never fire kPostLoadGame, so record bytes here.
+
+        bool byStall = false;
+        if (!byEvent && !byMenuClose && phase == LoadPhase::Tracking) {
+            float rawP = tracker.GetProgress();
+            if (rawP > 0.5f) {
+                if (fabsf(rawP - s_prevProgressStall) < 0.01f) {
+                    s_stallFrames += 1.0f;
+                    if (s_stallFrames >= 120.0f)   // ~2 s at 60 fps
+                        byStall = true;
+                } else {
+                    s_stallFrames       = 0.0f;
+                    s_prevProgressStall = rawP;
+                }
+            }
+        } else {
+            s_stallFrames       = 0.0f;
+            s_prevProgressStall = -1.0f;
+        }
+
+        if (byEvent || byMenuClose || byStall) {
+            if (byMenuClose || byStall) {
+                // Record bytes now (kPostLoadGame didn't fire for this path).
                 tracker.OnLoadComplete();
             }
+            s_drainTriggered = true;
             s_draining = true;
             logger::info("D3DOverlay: draining to 100% ({})",
-                byEvent ? "kPostLoadGame" : "menu closed");
+                byEvent ? "kPostLoadGame" : byMenuClose ? "menu closed" : "byte stall");
         }
     }
     s_prevPhase = phase;
@@ -1651,8 +1682,6 @@ static void DrawOverlay() {
     // Guard on s_display >= 100 so this doesn't fire during normal tracking.
     if (s_display >= 100.0f && !s_draining && !s_lingering && !s_awaitingKey) {
         s_loading = false;
-        // If the Loading Menu was held open for linger/hold, release it now.
-        // No-op when the hook was never installed (holdScreen=false, lingerSeconds=0).
         ScaleformManager::ReleaseLoadingMenuHold();
     }
 
@@ -1667,6 +1696,7 @@ static void DrawOverlay() {
         case 2:  centre = { screen.x * 0.5f,      screen.y - margin }; break;
         case 3:  centre = { screen.x - margin,    margin            }; break;
         case 4:  centre = { margin,               margin            }; break;
+        case 5:  centre = { screen.x * 0.5f,      margin            }; break;
         default: centre = { screen.x - margin,    screen.y - margin }; break;
     }
 

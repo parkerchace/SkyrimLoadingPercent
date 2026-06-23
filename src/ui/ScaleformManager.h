@@ -1,6 +1,10 @@
 #pragma once
+#include <atomic>
 
 namespace ScaleformManager {
+    extern std::atomic<bool> g_loadMenuCurrentlyOpen;
+
     void RegisterMenuSink();
-    void ReleaseLoadingMenuHold();  // called by DrawOverlay when linger/hold conditions are met
+    void InstallThreadHook();
+    void ReleaseLoadingMenuHold();
 }

@@ -9,8 +9,7 @@ namespace {
 
 void OnDataLoaded() {
     ScaleformManager::RegisterMenuSink();
-    // D3DOverlay is installed from SKSEPluginLoad (before D3D exists).
-    // Nothing D3D-related to do here.
+    ScaleformManager::InstallThreadHook();
 }
 
 void OnPostLoadGame(bool success) {

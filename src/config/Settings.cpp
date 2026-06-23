@@ -26,7 +26,7 @@ void Settings::Load() {
     }
 
     animStyle    = std::clamp(animStyle,    0, 19);
-    position     = std::clamp(position,     0, 4);
+    position     = std::clamp(position,     0, 5);
     scale        = std::clamp(scale,        0.2f, 3.0f);
     overlayAlpha = std::clamp(overlayAlpha, 0.1f, 1.0f);
 
