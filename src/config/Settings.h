@@ -12,12 +12,16 @@ public:
     void SaveCache();   // persists byte-calibration data without touching user-visible keys
 
     // Which animation to display (0-19)
-    int  animStyle{ 1 };
+    int  animStyle{ 0 };
     bool randomStyle{ false };  // pick a random style on each load
 
     // Where to draw the widget
     // 0=Bottom-Right  1=Bottom-Left  2=Bottom-Center  3=Top-Right  4=Top-Left
     int position{ 1 };
+
+    // Show the animation widget at all (false = percentage tracking still works,
+    // but nothing is drawn — only the "Press any key" prompt shows if holdScreen is on)
+    bool showAnimation{ true };
 
     // Show numeric percentage text
     bool showPercent{ true };

@@ -31,9 +31,20 @@ static HWND          g_hwnd          = nullptr; // game window handle, used for 
 static UINT          g_width         = 1280;
 static UINT          g_height        = 720;
 
+// Cached D3D11 objects for render-target management.
+// Upscaler mods (Community Shaders, PureDark) bind their own render targets during
+// their Present hooks; we restore the swapchain back buffer before ImGui renders so
+// our overlay ends up in the final composited frame.
+static ID3D11Device*           g_d3dDev = nullptr;
+static ID3D11DeviceContext*    g_d3dCtx = nullptr;
+static ID3D11RenderTargetView* g_rtv    = nullptr;
+static UINT                    g_rtvW   = 0;
+static UINT                    g_rtvH   = 0;
+
 static bool          g_cfgOpen          = false; // is the settings menu open?
 static bool          g_prevMenuKey      = false; // previous state of the toggle key
 static bool          g_capturingMenuKey = false; // waiting for user to press a new key
+static WNDPROC       g_origWndProc      = nullptr;
 
 // Function pointer types for the two D3D functions we hook.
 // We save the originals so we can call them after our code runs.
@@ -59,9 +70,9 @@ static bool  s_lingering   = false; // post-100% linger timer active
 static bool  s_awaitingKey = false; // post-100% waiting for keypress
 static LoadPhase s_prevPhase = LoadPhase::Idle; // tracks previous load phase to detect transitions
 
-// Byte-stall drain trigger: with bUserClosesLoadingMenu=1 the menu never auto-closes
-// on cell transitions, so byMenuClose never fires. Instead we watch the byte-progress
-// ratio and start drain once it hasn't changed for 2 seconds (loading thread done).
+// Byte-stall drain trigger: on cell-transition loads where kPostLoadGame doesn't fire
+// and the menu doesn't auto-close, byMenuClose and byEvent both stay false. We watch
+// the byte-progress ratio instead and start drain once it's been still for 2 seconds.
 static float s_stallFrames       = 0.0f;
 static float s_prevProgressStall = -1.0f;
 static std::chrono::steady_clock::time_point s_start;
@@ -742,7 +753,7 @@ static void Anim_Shout(ImDrawList* dl, ImVec2 c, float sc,
     float horizY = c.y + 0.32f*R;
     dl->AddRectFilled({c.x-W*0.5f, horizY}, {c.x+W*0.5f, horizY+28.0f*sc}, IM_COL32(4,6,10,230));
 
-    // Generate 7 mountains from s_mountainSeed (LCG)
+    // Generate 7 mountains from s_mountainSeed (pseudo-random sequence)
     unsigned mState = static_cast<unsigned>(s_mountainSeed);
     auto mLcg = [](unsigned& s) -> float {
         s = s * 1664525u + 1013904223u;
@@ -1124,7 +1135,7 @@ static void Anim_StandingStone(ImDrawList* dl, ImVec2 c, float sc,
     // Cracks that glow and spread as the stone awakens (random per load)
     float cw = stWt, ch = (botY - topY), cy0 = topY;
 
-    // LCG to generate pseudo-random floats in [-1,1] and [0,1]
+    // Pseudo-random floats in [-1,1] and [0,1]
     unsigned crState = static_cast<unsigned>(s_crackSeed);
     auto lcgF = [](unsigned& s) -> float {
         s = s * 1664525u + 1013904223u;
@@ -1329,11 +1340,15 @@ static float s_prevTick = 0.0f;
 static void DrawConfigMenu() {
     ImGuiIO& io = ImGui::GetIO();
 
+    // s_cfgScale controls how large the whole menu is.
+    // Corner handles on the window let the user drag to resize everything at once.
+    static float s_cfgScale = 1.0f;
+    const  float s           = s_cfgScale;
+
     ImGui::SetNextWindowPos(
         ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
         ImGuiCond_Once, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(660, 360), ImGuiCond_Once);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(520, 280), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::SetNextWindowSize(ImVec2(660.0f * s, 360.0f * s), ImGuiCond_Always);
 
     ImGui::PushStyleColor(ImGuiCol_WindowBg,      ImVec4(0.08f,0.08f,0.10f,0.95f));
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive,  ImVec4(0.16f,0.14f,0.08f,1.0f));
@@ -1342,10 +1357,15 @@ static void DrawConfigMenu() {
     bool open = true;
     std::string winTitle = "Loading Progress  ( " + VKName(cfg.menuKey) + " closes )";
     if (ImGui::Begin(winTitle.c_str(), &open,
-                     ImGuiWindowFlags_NoCollapse)) {
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+
+        ImGui::SetWindowFontScale(s);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,     ImVec2(4.0f*s, 3.0f*s));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,      ImVec2(8.0f*s, 4.0f*s));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing, ImVec2(4.0f*s, 4.0f*s));
 
         if (ImGui::BeginTable("##layout", 2, 0)) {
-            ImGui::TableSetupColumn("##ctrl",    ImGuiTableColumnFlags_WidthFixed, 350.0f);
+            ImGui::TableSetupColumn("##ctrl",    ImGuiTableColumnFlags_WidthFixed, 350.0f * s);
             ImGui::TableSetupColumn("##preview", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableNextRow();
 
@@ -1361,8 +1381,10 @@ static void DrawConfigMenu() {
                 "16 Enchantment",    "17 Word Wall",      "18 Standing Stone",
                 "19 Twin Moons",     "20 Blizzard Vortex"
             };
+            ImGui::Checkbox("Show animation overlay", &cfg.showAnimation);
+            if (!cfg.showAnimation) ImGui::BeginDisabled();
             ImGui::Checkbox("Random animation each load", &cfg.randomStyle);
-            ImGui::SetNextItemWidth(270);
+            ImGui::SetNextItemWidth(270.0f * s);
             if (cfg.randomStyle) ImGui::BeginDisabled();
             ImGui::Combo("Animation", &cfg.animStyle, styles, 20);
             if (cfg.randomStyle) ImGui::EndDisabled();
@@ -1372,13 +1394,13 @@ static void DrawConfigMenu() {
                 "Bottom-Center",          "Top-Right",
                 "Top-Left",               "Top-Center"
             };
-            ImGui::SetNextItemWidth(255);
+            ImGui::SetNextItemWidth(255.0f * s);
             ImGui::Combo("Position", &cfg.position, positions, 6);
 
-            ImGui::SetNextItemWidth(255);
+            ImGui::SetNextItemWidth(255.0f * s);
             ImGui::SliderFloat("Scale", &cfg.scale, 0.2f, 3.0f, "%.2f");
 
-            ImGui::SetNextItemWidth(255);
+            ImGui::SetNextItemWidth(255.0f * s);
             ImGui::SliderFloat("Opacity", &cfg.overlayAlpha, 0.1f, 1.0f, "%.2f");
 
             ImGui::Checkbox("Show Percentage", &cfg.showPercent);
@@ -1394,6 +1416,7 @@ static void DrawConfigMenu() {
                     | (static_cast<uint32_t>(rgb[1]*255.0f+0.5f) <<  8)
                     |  static_cast<uint32_t>(rgb[2]*255.0f+0.5f);
             }
+            if (!cfg.showAnimation) ImGui::EndDisabled();
 
             ImGui::Separator();
 
@@ -1401,8 +1424,7 @@ static void DrawConfigMenu() {
             ImGui::Text("Menu key:");
             ImGui::SameLine();
             if (g_capturingMenuKey) {
-                ImGui::Button("Press any key...", ImVec2(200, 0));
-                // Escape cancels
+                ImGui::Button("Press any key...", ImVec2(200.0f * s, 0));
                 if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
                     g_capturingMenuKey = false;
                     g_prevMenuKey = true;
@@ -1411,16 +1433,16 @@ static void DrawConfigMenu() {
                         if (vk == VK_ESCAPE  || vk == VK_LBUTTON ||
                             vk == VK_RBUTTON || vk == VK_MBUTTON) continue;
                         if (GetAsyncKeyState(vk) & 0x8000) {
-                            cfg.menuKey       = vk;
+                            cfg.menuKey        = vk;
                             g_capturingMenuKey = false;
-                            g_prevMenuKey      = true; // prevent immediate retrigger
+                            g_prevMenuKey      = true;
                             break;
                         }
                     }
                 }
             } else {
                 std::string label = VKName(cfg.menuKey) + "  (click to rebind)";
-                if (ImGui::Button(label.c_str(), ImVec2(200, 0)))
+                if (ImGui::Button(label.c_str(), ImVec2(200.0f * s, 0)))
                     g_capturingMenuKey = true;
             }
 
@@ -1433,11 +1455,11 @@ static void DrawConfigMenu() {
                     "Bottom-Right", "Bottom-Left", "Bottom-Center",
                     "Top-Right",    "Top-Left",    "Center"
                 };
-                ImGui::SetNextItemWidth(200);
+                ImGui::SetNextItemWidth(200.0f * s);
                 ImGui::Combo("Prompt position", &cfg.promptPosition, promptPositions, 6);
             }
-            ImGui::SetNextItemWidth(200);
-            ImGui::SliderInt("Linger after 100%  (sec)", &cfg.lingerSeconds, 0, 30);
+            ImGui::SetNextItemWidth(200.0f * s);
+            ImGui::SliderInt("Linger (seconds)", &cfg.lingerSeconds, 0, 30);
 
             ImGui::Spacing();
             ImGui::TextDisabled("Changes are live and saved automatically.");
@@ -1449,8 +1471,8 @@ static void DrawConfigMenu() {
             ImGui::TableNextColumn();
 
             s_prevTick += 1.0f;
-            float    prevP  = 50.0f + 50.0f * sinf(s_prevTick * 0.015f);
-            uint32_t col    = cfg.color & 0x00FFFFFFu;
+            float    prevP = 50.0f + 50.0f * sinf(s_prevTick * 0.015f);
+            uint32_t col   = cfg.color & 0x00FFFFFFu;
 
             ImGui::BeginChild("##canvas", ImGui::GetContentRegionAvail(), true,
                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -1461,65 +1483,123 @@ static void DrawConfigMenu() {
 
             ImDrawList* pdl = ImGui::GetWindowDrawList();
 
-            // Scale: linear bar and word wall are very wide — use smaller sc
-            float prevSc = (cfg.animStyle == 9)
-                ? 0.28f
-                : cSz.y / 240.0f;
+            float prevSc = (cfg.animStyle == 9) ? cSz.y / 240.0f * 0.45f
+                                                 : cSz.y / 240.0f;
 
-            // Preview renders at full opacity
-            float savedAlpha = g_animAlpha;
-            g_animAlpha = 1.0f;
+            if (cfg.showAnimation) {
+                float savedAlpha = g_animAlpha;
+                g_animAlpha = 1.0f;
 
-            // Re-roll random seeds when style changes or every ~5 seconds (300 ticks)
-            static int   s_previewLastStyle = -1;
-            static float s_previewRerollAt  = -1.0f;
-            if (cfg.animStyle != s_previewLastStyle || s_prevTick >= s_previewRerollAt) {
-                s_previewLastStyle = cfg.animStyle;
-                s_previewRerollAt  = s_prevTick + 300.0f;
-                s_constPattern = rand();
-                s_wallSeed     = rand();
-                s_crackSeed    = rand();
-                s_mountainSeed = rand();
+                static int   s_previewLastStyle = -1;
+                static float s_previewRerollAt  = -1.0f;
+                if (cfg.animStyle != s_previewLastStyle) {
+                    s_prevTick        = -kPI / (2.0f * 0.015f); // sin=-1 → prevP starts at 0%
+                    s_previewLastStyle = cfg.animStyle;
+                    s_previewRerollAt  = s_prevTick + 300.0f;
+                    s_constPattern = rand();
+                    s_wallSeed     = rand();
+                    s_crackSeed    = rand();
+                    s_mountainSeed = rand();
+                } else if (s_prevTick >= s_previewRerollAt) {
+                    s_previewRerollAt = s_prevTick + 300.0f;
+                    s_constPattern = rand();
+                    s_wallSeed     = rand();
+                    s_crackSeed    = rand();
+                    s_mountainSeed = rand();
+                }
+
+                switch (cfg.animStyle) {
+                    case 0:  Anim_CircleFill   (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 1:  Anim_DragonEye    (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 2:  Anim_NordicRunes  (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 3:  Anim_Waveform     (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 4:  Anim_PixelBlocks  (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 5:  Anim_OrbitDots    (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 6:  Anim_CompassRose  (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 7:  Anim_Helix        (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 8:  Anim_Snowflake    (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 9:  Anim_LinearBar    (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 10: Anim_SoulGem      (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 11: Anim_DwemerCogs   (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 12: Anim_Shout        (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 13: Anim_Constellation(pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 14: Anim_DragonScales (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 15: Anim_Enchantment  (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 16: Anim_WordWall     (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 17: Anim_StandingStone(pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    case 18: Anim_TwinMoons    (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                    default: Anim_DaedricPortal(pdl, ctr, prevSc, prevP, s_prevTick, col); break;
+                }
+
+                g_animAlpha = savedAlpha;
+
+                char pBuf[8];
+                snprintf(pBuf, sizeof(pBuf), "%d%%", static_cast<int>(prevP));
+                ImVec2 pts = ImGui::CalcTextSize(pBuf);
+                pdl->AddText(nullptr, 13.0f,
+                    { ctr.x - pts.x*0.5f, cMin.y + cSz.y - 18.0f },
+                    IM_COL32(255,255,255,140), pBuf);
+            } else {
+                constexpr const char* kOff = "Animation disabled";
+                ImVec2 ts = ImGui::CalcTextSize(kOff);
+                pdl->AddText(nullptr, 13.0f,
+                    { ctr.x - ts.x*0.5f, ctr.y - 6.5f },
+                    IM_COL32(180,180,180,160), kOff);
             }
-
-            switch (cfg.animStyle) {
-                case 0:  Anim_CircleFill   (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 1:  Anim_DragonEye    (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 2:  Anim_NordicRunes  (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 3:  Anim_Waveform     (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 4:  Anim_PixelBlocks  (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 5:  Anim_OrbitDots    (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 6:  Anim_CompassRose  (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 7:  Anim_Helix        (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 8:  Anim_Snowflake    (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 9:  Anim_LinearBar    (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 10: Anim_SoulGem      (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 11: Anim_DwemerCogs   (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 12: Anim_Shout        (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 13: Anim_Constellation(pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 14: Anim_DragonScales (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 15: Anim_Enchantment  (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 16: Anim_WordWall     (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 17: Anim_StandingStone(pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                case 18: Anim_TwinMoons    (pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-                default: Anim_DaedricPortal(pdl, ctr, prevSc, prevP, s_prevTick, col); break;
-            }
-
-            g_animAlpha = savedAlpha;
-
-            // Percentage readout
-            char pBuf[8];
-            snprintf(pBuf, sizeof(pBuf), "%d%%", static_cast<int>(prevP));
-            ImVec2 pts = ImGui::CalcTextSize(pBuf);
-            pdl->AddText(nullptr, 13.0f,
-                { ctr.x - pts.x*0.5f, cMin.y + cSz.y - 18.0f },
-                IM_COL32(255,255,255,140), pBuf);
 
             ImGui::Dummy(cSz);
             ImGui::EndChild();
 
             ImGui::EndTable();
         }
+
+        // Window corner drag handles — drag any corner to scale the whole menu.
+        // Drawn on the foreground list so they sit on top of the window border.
+        {
+            ImVec2 wPos  = ImGui::GetWindowPos();
+            ImVec2 wSize = ImGui::GetWindowSize();
+            const ImVec2 corners[4] = {
+                { wPos.x,           wPos.y           },   // TL
+                { wPos.x + wSize.x, wPos.y           },   // TR
+                { wPos.x + wSize.x, wPos.y + wSize.y },   // BR
+                { wPos.x,           wPos.y + wSize.y },   // BL
+            };
+            // Outward direction for each corner: dragging outward increases scale
+            const float dirX[4] = { -1,+1,+1,-1 };
+            const float dirY[4] = { -1,-1,+1,+1 };
+
+            static int   s_winCorner    = -1;
+            static float s_scaleStart   = 1.0f;
+            static ImVec2 s_dragStart{};
+
+            ImDrawList* fdl  = ImGui::GetForegroundDrawList();
+            ImVec2      mouse = io.MousePos;
+            bool        held  = io.MouseDown[0];
+
+            for (int i = 0; i < 4; i++) {
+                float dx = mouse.x - corners[i].x, dy = mouse.y - corners[i].y;
+                bool  hot = (dx*dx + dy*dy) < 225.0f;   // 15 px hit radius
+                if (hot && held && s_winCorner < 0) {
+                    s_winCorner  = i;
+                    s_scaleStart = s_cfgScale;
+                    s_dragStart  = mouse;
+                }
+                uint32_t hCol = hot ? IM_COL32(255,200,80,255) : IM_COL32(180,180,180,180);
+                fdl->AddRectFilled({ corners[i].x-5, corners[i].y-5 },
+                                   { corners[i].x+5, corners[i].y+5 }, hCol, 2.0f);
+            }
+            if (s_winCorner >= 0) {
+                if (held) {
+                    float outward = (mouse.x - s_dragStart.x) * dirX[s_winCorner]
+                                  + (mouse.y - s_dragStart.y) * dirY[s_winCorner];
+                    s_cfgScale = std::clamp(s_scaleStart + outward / 330.0f, 0.5f, 2.5f);
+                } else {
+                    s_winCorner = -1;
+                }
+            }
+        }
+
+        ImGui::PopStyleVar(3);
     }
     ImGui::End();
     ImGui::PopStyleColor(3);
@@ -1663,8 +1743,10 @@ static void DrawOverlay() {
     if (s_lingering) {
         float lingerElapsed = std::chrono::duration<float>(
             std::chrono::steady_clock::now() - s_lingerStart).count();
-        if (lingerElapsed >= static_cast<float>(cfg.lingerSeconds))
-            s_lingering = false;
+        if (lingerElapsed >= static_cast<float>(cfg.lingerSeconds)) {
+            s_lingering   = false;
+            s_awaitingKey = false;  // timer supersedes key-press hold
+        }
     }
 
     // Key-await tick — any key (except mouse buttons) dismisses
@@ -1703,37 +1785,37 @@ static void DrawOverlay() {
     ImDrawList* dl  = ImGui::GetBackgroundDrawList();
     uint32_t    col = cfg.color & 0x00FFFFFFu;
 
-    // Apply opacity from settings
-    g_animAlpha = cfg.overlayAlpha;
+    if (cfg.showAnimation) {
+        g_animAlpha = cfg.overlayAlpha;
 
+        switch (s_activeStyle) {
+            case 0:  Anim_CircleFill   (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 1:  Anim_DragonEye    (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 2:  Anim_NordicRunes  (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 3:  Anim_Waveform     (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 4:  Anim_PixelBlocks  (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 5:  Anim_OrbitDots    (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 6:  Anim_CompassRose  (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 7:  Anim_Helix        (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 8:  Anim_Snowflake    (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 9:  Anim_LinearBar    (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 10: Anim_SoulGem      (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 11: Anim_DwemerCogs   (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 12: Anim_Shout        (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 13: Anim_Constellation(dl, centre, sc, s_display, float(s_tick), col); break;
+            case 14: Anim_DragonScales (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 15: Anim_Enchantment  (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 16: Anim_WordWall     (dl, centre, sc, s_display, float(s_tick), col); break;
+            case 17: Anim_StandingStone(dl, centre, sc, s_display, float(s_tick), col); break;
+            case 18: Anim_TwinMoons    (dl, centre, sc, s_display, float(s_tick), col); break;
+            default: Anim_DaedricPortal(dl, centre, sc, s_display, float(s_tick), col); break;
+        }
 
-    switch (s_activeStyle) {
-        case 0:  Anim_CircleFill   (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 1:  Anim_DragonEye    (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 2:  Anim_NordicRunes  (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 3:  Anim_Waveform     (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 4:  Anim_PixelBlocks  (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 5:  Anim_OrbitDots    (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 6:  Anim_CompassRose  (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 7:  Anim_Helix        (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 8:  Anim_Snowflake    (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 9:  Anim_LinearBar    (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 10: Anim_SoulGem      (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 11: Anim_DwemerCogs   (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 12: Anim_Shout        (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 13: Anim_Constellation(dl, centre, sc, s_display, float(s_tick), col); break;
-        case 14: Anim_DragonScales (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 15: Anim_Enchantment  (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 16: Anim_WordWall     (dl, centre, sc, s_display, float(s_tick), col); break;
-        case 17: Anim_StandingStone(dl, centre, sc, s_display, float(s_tick), col); break;
-        case 18: Anim_TwinMoons    (dl, centre, sc, s_display, float(s_tick), col); break;
-        default: Anim_DaedricPortal(dl, centre, sc, s_display, float(s_tick), col); break;
+        g_animAlpha = 1.0f;
     }
 
-    g_animAlpha = 1.0f;
-
     // Percentage label
-    if (cfg.showPercent) {
+    if (cfg.showAnimation && cfg.showPercent) {
         char buf[8];
         snprintf(buf, sizeof(buf), "%d%%", static_cast<int>(s_display));
         float fontSize = (std::max)(12.0f, 18.0f * sc);
@@ -1770,6 +1852,27 @@ static void DrawOverlay() {
 }
 
 //
+// WNDPROC HOOK — blocks mouse input from reaching the game while the menu is open.
+// Chains to the original WndProc so ENB, SKSE, and other mods are unaffected.
+//
+
+static LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (g_cfgOpen) {
+        switch (msg) {
+            case WM_INPUT:
+            case WM_MOUSEMOVE:
+            case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
+            case WM_RBUTTONDOWN: case WM_RBUTTONUP: case WM_RBUTTONDBLCLK:
+            case WM_MBUTTONDOWN: case WM_MBUTTONUP: case WM_MBUTTONDBLCLK:
+            case WM_MOUSEWHEEL:  case WM_MOUSEHWHEEL:
+            case WM_XBUTTONDOWN: case WM_XBUTTONUP: case WM_XBUTTONDBLCLK:
+                return DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+    }
+    return CallWindowProcW(g_origWndProc, hwnd, msg, wParam, lParam);
+}
+
+//
 // PRESENT HOOK
 //
 
@@ -1787,6 +1890,12 @@ static HRESULT WINAPI Hook_Present(IDXGISwapChain* chain, UINT sync, UINT flags)
             g_width  = desc.BufferDesc.Width  ? desc.BufferDesc.Width  : 1280;
             g_height = desc.BufferDesc.Height ? desc.BufferDesc.Height : 720;
 
+            if (!g_origWndProc)
+                g_origWndProc = reinterpret_cast<WNDPROC>(
+                    SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC,
+                                      reinterpret_cast<LONG_PTR>(&HookWndProc)));
+            logger::info("D3DOverlay: WndProc hooked");
+
             g_ctx = ImGui::CreateContext();
             ImGui::SetCurrentContext(g_ctx);
 
@@ -1799,8 +1908,21 @@ static HRESULT WINAPI Hook_Present(IDXGISwapChain* chain, UINT sync, UINT flags)
             ImGui::GetStyle().WindowRounding = 6.0f;
             ImGui::GetStyle().FrameRounding  = 4.0f;
 
-            device ->Release();
-            context->Release();
+            // Keep our own refs for render-target management.
+            // ImGui already called AddRef internally; these are the refs from GetDevice/
+            // GetImmediateContext, which we now own rather than releasing.
+            g_d3dDev = device;
+            g_d3dCtx = context;
+
+            // Create initial back-buffer RTV.
+            ID3D11Texture2D* buf = nullptr;
+            if (SUCCEEDED(chain->GetBuffer(0, __uuidof(ID3D11Texture2D),
+                                           reinterpret_cast<void**>(&buf)))) {
+                device->CreateRenderTargetView(buf, nullptr, &g_rtv);
+                buf->Release();
+                g_rtvW = g_width;
+                g_rtvH = g_height;
+            }
 
             g_initialized = true;
             logger::info("D3DOverlay: ImGui initialised ({}x{})", g_width, g_height);
@@ -1871,6 +1993,25 @@ static HRESULT WINAPI Hook_Present(IDXGISwapChain* chain, UINT sync, UINT flags)
     if (g_cfgOpen) DrawConfigMenu();
 
     ImGui::Render();
+
+    // Recreate the back-buffer RTV if the swapchain was resized.
+    if (g_d3dDev && (g_rtvW != g_width || g_rtvH != g_height)) {
+        if (g_rtv) { g_rtv->Release(); g_rtv = nullptr; }
+        ID3D11Texture2D* buf = nullptr;
+        if (SUCCEEDED(chain->GetBuffer(0, __uuidof(ID3D11Texture2D),
+                                       reinterpret_cast<void**>(&buf)))) {
+            g_d3dDev->CreateRenderTargetView(buf, nullptr, &g_rtv);
+            buf->Release();
+            g_rtvW = g_width;
+            g_rtvH = g_height;
+        }
+    }
+    // Restore the swapchain back buffer as the active render target.
+    // Community Shaders Upscaling and PureDark Upscaler bind their own render targets
+    // during upscaling; without this, ImGui draws to the wrong surface.
+    if (g_d3dCtx && g_rtv)
+        g_d3dCtx->OMSetRenderTargets(1, &g_rtv, nullptr);
+
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
     ImGui::SetCurrentContext(prevCtx);

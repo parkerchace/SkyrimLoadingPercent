@@ -14,7 +14,13 @@ void OnDataLoaded() {
 
 void OnPostLoadGame(bool success) {
     if (success) {
+        // Signal D3DOverlay to start the drain animation and linger timer.
         ProgressTracker::GetSingleton().OnLoadComplete();
+        // Block the game thread here. Skyrim SE's render thread is independent,
+        // so the loading screen continues to animate (3D model spins, tips cycle).
+        // The game stays in loading state until ReleaseLoadingMenuHold is called
+        // by D3DOverlay when the linger timer (or key press) expires.
+        ScaleformManager::WaitForHoldRelease();
     }
 }
 

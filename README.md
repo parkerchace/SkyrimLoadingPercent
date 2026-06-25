@@ -6,9 +6,12 @@ An SKSE plugin that draws a live loading screen animation and percentage indicat
 
 - 20 original hand-coded animations (constellation, standing stone, aurora borealis, alchemy cauldron, word wall, and more)
 - Live percentage readout that tracks real load progress via file I/O monitoring
-- Fully configurable in-game: press the toggle key (default `\`) to open the settings menu - settings save automatically on close
+- Fully configurable in-game: press `\` to open the settings menu — settings save automatically on close
 - Optional "random animation each load" mode
-- Position, color, scale, and opacity controls
+- Position, colour, scale, and opacity controls
+- Drag any corner of the settings menu to scale the entire UI — all text, controls, and the animation preview scale together
+- Hold the loading screen until a key is pressed (shows a pulsing prompt)
+- Configurable linger timer — stay at 100% for N seconds before the screen exits
 
 ## Install
 
@@ -46,7 +49,7 @@ The toggle key defaults to `\` (backslash). If that key is awkward on your keybo
 
 For any key not listed: https://www.rbase.com/support/rsyntax/virtual_keycodes.html
 
-Settings take effect immediately and are saved automatically when you close the menu.
+Settings take effect immediately and are saved when you close the menu.
 
 ## Requirements
 
@@ -55,7 +58,14 @@ Settings take effect immediately and are saved automatically when you close the 
 
 ## Compatibility
 
-Largely untested. This plugin hooks `IDXGISwapChain::Present` to draw the overlay and `ReadFile`/`CreateFileW` to track load progress — the same techniques used by many SKSE overlays and ENBs. Conflicts are possible with other plugins that hook the same entry points. Source code is available on [GitHub](https://github.com/parkerchace/SkyrimLoadingPercent).
+| Mod | Status |
+|-----|--------|
+| ENB (without Frame Generation) | Compatible |
+| ENB Frame Generation | Not compatible — ENB Frame Generation proxies D3D12 rather than D3D11, which this plugin hooks. The overlay will not appear. |
+| Community Shaders | Compatible |
+| Community Shaders Upscaling | Compatible |
+| PureDark Upscaler | Compatible |
+| Other SKSE overlays | Generally compatible; conflicts are possible if another plugin hooks `IDXGISwapChain::Present` at the same slot |
 
 ## Libraries used
 
@@ -69,5 +79,7 @@ Largely untested. This plugin hooks `IDXGISwapChain::Present` to draw the overla
 ## Credits
 
 Created by Parker Chace
+
+Community contributions: Kreorporus (hold screen / linger timer suggestion), AleksandrShepard (animation feedback), legionnaire79 (top-center position suggestion), merowen (compatibility testing)
 
 Built with assistance from [Claude Code](https://claude.ai/code) (Anthropic) — all 20 animations, the progress tracking system, and the configuration UI were designed and written collaboratively in this project.

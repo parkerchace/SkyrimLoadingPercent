@@ -6,5 +6,6 @@ namespace ScaleformManager {
 
     void RegisterMenuSink();
     void InstallThreadHook();
+    void WaitForHoldRelease();
     void ReleaseLoadingMenuHold();
 }

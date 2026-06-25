@@ -11,9 +11,25 @@ namespace {
 
 static std::atomic<bool> g_holdActive{ false };
 
+// ── BGSSaveLoadManager::Thread::Unk_02 ──────────────────────────────────────
+// Fires for some load types (e.g. new game). Blocks the load thread until the
+// hold clears so the loading state remains alive on that path too.
 using ThreadFn = void(*)(RE::BGSSaveLoadManager::Thread*);
 static ThreadFn s_origThreadFn = nullptr;
 
+void HookThreadUnk02(RE::BGSSaveLoadManager::Thread* a_this)
+{
+    s_origThreadFn(a_this);
+    logger::info("ScaleformManager: Unk_02 done — waiting for hold release");
+    while (g_holdActive.load(std::memory_order_acquire))
+        ::Sleep(10);
+    logger::info("ScaleformManager: Unk_02 hold released");
+}
+
+// ── LoadingMenu::ProcessMessage (vtbl[4]) ────────────────────────────────────
+// Safety net: if kHide arrives from any path while hold is active, ignore it.
+// Normally the game thread is blocked in WaitForHoldRelease so kHide can't be
+// dispatched anyway, but UIMessageQueue can be written from other threads.
 using ProcessMsgFn = RE::UI_MESSAGE_RESULTS(*)(RE::IMenu*, RE::UIMessage&);
 static ProcessMsgFn s_origPM = nullptr;
 
@@ -22,50 +38,19 @@ static RE::UI_MESSAGE_RESULTS HookProcessMessage(RE::IMenu* a_this, RE::UIMessag
     auto msgType = a_msg.type.get();
     if (msgType == RE::UI_MESSAGE_TYPE::kHide ||
         msgType == RE::UI_MESSAGE_TYPE::kForceHide) {
-        auto rva = reinterpret_cast<uintptr_t>(_ReturnAddress())
-                   - REL::Module::get().base();
         if (g_holdActive.load(std::memory_order_acquire)) {
-            // Engine wants to close the loading screen but we're still holding.
-            // Return kIgnore so the engine moves on without closing or looping.
-            logger::info("ProcessMessage kHide BLOCKED — RVA: {:#x}", rva);
+            logger::info("ProcessMessage kHide BLOCKED (hold active)");
             return RE::UI_MESSAGE_RESULTS::kIgnore;
         }
-        logger::info("ProcessMessage kHide forwarded — RVA: {:#x}", rva);
+        logger::info("ProcessMessage kHide forwarded");
     }
     return s_origPM(a_this, a_msg);
 }
 
-// BGSSaveLoadManager::Thread vtable has exactly 3 slots (confirmed: vtbl[3] = MH_ERROR_NOT_EXECUTABLE):
-//   vtbl[0] = ~Thread()    (// 00)
-//   vtbl[1] = Unk_01       (// 01) — BSThread run loop or init function
-//   vtbl[2] = Unk_02       (// 02) — per-task work function  <-- hook here
-//
-// Blocking inside Unk_02 keeps isBusy=true in the BSThread run loop, which
-// prevents the engine from sending kHide to LoadingMenu.
-// When g_holdActive clears, Unk_02 returns → run loop sets isBusy=false → normal teardown.
-void HookThreadUnk02(RE::BGSSaveLoadManager::Thread* a_this)
-{
-    s_origThreadFn(a_this);
-
-    // Loading data is ready. Signal the drain animation.
-    ProgressTracker::GetSingleton().OnLoadComplete();
-
-    // Block until DrawOverlay clears the hold. While we block, the BSThread run loop
-    // has not yet set isBusy=false, so the engine keeps the loading screen fully alive.
-    logger::info("ScaleformManager: Unk_02 done — holding (holdActive={})",
-                 g_holdActive.load(std::memory_order_relaxed));
-    while (g_holdActive.load(std::memory_order_acquire)) {
-        ::Sleep(10);
-    }
-    logger::info("ScaleformManager: hold released — Unk_02 returning");
-}
-
+// ── Menu event sink ──────────────────────────────────────────────────────────
 class MenuEventSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent> {
 public:
-    static MenuEventSink* GetSingleton() {
-        static MenuEventSink instance;
-        return &instance;
-    }
+    static MenuEventSink* GetSingleton() { static MenuEventSink instance; return &instance; }
 
     RE::BSEventNotifyControl ProcessEvent(
         const RE::MenuOpenCloseEvent* a_event,
@@ -106,25 +91,21 @@ void RegisterMenuSink() {
 }
 
 void InstallThreadHook() {
+    // BGSSaveLoadManager::Thread::Unk_02 (vtbl[2])
     auto vtbl = REL::Relocation<std::uintptr_t*>{ RE::VTABLE_BGSSaveLoadManager__Thread[0] };
-    void* target = reinterpret_cast<void*>(vtbl.get()[2]);  // slot 2 = Unk_02 (per-task)
-
+    void* target = reinterpret_cast<void*>(vtbl.get()[2]);
     logger::info("ScaleformManager: Thread::Unk_02 target (vtbl[2]) = {:p}", target);
-
     MH_STATUS st = MH_CreateHook(target,
                                   reinterpret_cast<void*>(&HookThreadUnk02),
                                   reinterpret_cast<void**>(&s_origThreadFn));
     if (st != MH_OK && st != MH_ERROR_ALREADY_CREATED) {
-        logger::error("ScaleformManager: MH_CreateHook(Thread::Unk_02) failed ({})",
-                      static_cast<int>(st));
+        logger::error("ScaleformManager: MH_CreateHook(Thread::Unk_02) failed ({})", static_cast<int>(st));
     } else {
         MH_EnableHook(target);
-        logger::info("ScaleformManager: BGSSaveLoadManager::Thread::Unk_02 hooked");
+        logger::info("ScaleformManager: Thread::Unk_02 hooked");
     }
 
-    // ProcessMessage diagnostic — read-only, no interception.
-    // VTABLE_LoadingMenu[0] slot [4] = LoadingMenu::ProcessMessage (IMenu.h // 04).
-    // _ReturnAddress() gives the exact game function that calls kHide.
+    // LoadingMenu::ProcessMessage (VTABLE_LoadingMenu slot 4)
     auto pmVtbl = REL::Relocation<std::uintptr_t*>{ RE::VTABLE_LoadingMenu[0] };
     void* pmTarget = reinterpret_cast<void*>(pmVtbl.get()[4]);
     logger::info("ScaleformManager: ProcessMessage target (vtbl[4]) = {:p}", pmTarget);
@@ -132,25 +113,32 @@ void InstallThreadHook() {
                        reinterpret_cast<void*>(&HookProcessMessage),
                        reinterpret_cast<void**>(&s_origPM));
     if (st != MH_OK && st != MH_ERROR_ALREADY_CREATED) {
-        logger::error("ScaleformManager: MH_CreateHook(ProcessMessage) failed ({})",
-                      static_cast<int>(st));
+        logger::error("ScaleformManager: MH_CreateHook(ProcessMessage) failed ({})", static_cast<int>(st));
     } else {
         MH_EnableHook(pmTarget);
-        logger::info("ScaleformManager: LoadingMenu::ProcessMessage hooked (diagnostic)");
+        logger::info("ScaleformManager: ProcessMessage hooked");
     }
+}
+
+void WaitForHoldRelease() {
+    if (!g_holdActive.load(std::memory_order_acquire)) return;
+    logger::info("ScaleformManager: WaitForHoldRelease — blocking game thread");
+    while (g_holdActive.load(std::memory_order_acquire))
+        ::Sleep(10);
+    logger::info("ScaleformManager: WaitForHoldRelease — game thread unblocked");
 }
 
 void ReleaseLoadingMenuHold() {
     g_holdActive.store(false, std::memory_order_release);
-    // If the thread hook kept the menu open (or bUserClosesLoadingMenu fallback did),
-    // send kHide so the engine actually closes it after the thread unblocks.
+    logger::info("ScaleformManager: ReleaseLoadingMenuHold called");
+    // Game thread unblocks from WaitForHoldRelease and the game's natural
+    // close sequence sends kHide. Send one explicitly too as a safety net.
     if (g_loadMenuCurrentlyOpen.load(std::memory_order_acquire)) {
         if (auto* q = RE::UIMessageQueue::GetSingleton())
             q->AddMessage(RE::BSFixedString("Loading Menu"),
                           RE::UI_MESSAGE_TYPE::kHide, nullptr);
         logger::info("ScaleformManager: sent kHide to UIMessageQueue");
     }
-    logger::info("ScaleformManager: ReleaseLoadingMenuHold called");
 }
 
 } // namespace ScaleformManager

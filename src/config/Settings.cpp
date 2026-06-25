@@ -9,10 +9,11 @@ void Settings::Load() {
         return;
     }
 
-    animStyle    = static_cast<int>(ini.GetLongValue("General", "iAnimationStyle", animStyle));
-    randomStyle  = ini.GetBoolValue("General", "bRandomStyle", randomStyle);
-    position     = static_cast<int>(ini.GetLongValue("General", "iPosition",       position));
-    showPercent  = ini.GetBoolValue("Display", "bShowPercentage", showPercent);
+    animStyle     = static_cast<int>(ini.GetLongValue("General", "iAnimationStyle", animStyle));
+    randomStyle   = ini.GetBoolValue("General", "bRandomStyle",   randomStyle);
+    position      = static_cast<int>(ini.GetLongValue("General", "iPosition",       position));
+    showAnimation = ini.GetBoolValue("Display", "bShowAnimation", showAnimation);
+    showPercent   = ini.GetBoolValue("Display", "bShowPercentage", showPercent);
     scale        = static_cast<float>(ini.GetDoubleValue("Display", "fScale",        scale));
     overlayAlpha = static_cast<float>(ini.GetDoubleValue("Display", "fOverlayAlpha", overlayAlpha));
 
@@ -62,6 +63,7 @@ void Settings::Save() {
     ini.SetBoolValue  ("General", "bHoldScreen",      holdScreen);
     ini.SetLongValue  ("General", "iLingerSeconds",   lingerSeconds);
     ini.SetLongValue  ("General", "iPromptPosition",  promptPosition);
+    ini.SetBoolValue  ("Display", "bShowAnimation",   showAnimation);
     ini.SetBoolValue  ("Display", "bShowPercentage",  showPercent);
     ini.SetDoubleValue("Display", "fScale",           static_cast<double>(scale));
     ini.SetDoubleValue("Display", "fOverlayAlpha",    static_cast<double>(overlayAlpha));
