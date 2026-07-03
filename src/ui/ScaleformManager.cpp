@@ -783,7 +783,7 @@ static void GAnim_LinearBar(float sc, float p, float t, uint32_t col)
     Diamond(bx + bw + 10*sc, 0, 10*sc);
 }
 
-static void GAnim_SoulGem(float sc, float p, float t, uint32_t col)
+static void GAnim_Cauldron(float sc, float p, float t, uint32_t col)
 {
     float f    = p / 100.0f;
     float glow = 0.5f + 0.5f*sinf(t * 0.08f);
@@ -897,7 +897,7 @@ static void GAnim_DwemerCogs(float sc, float p, float t, uint32_t col)
     GStrokeArcDeg(g1x, g1y, arcR, -90.0f + 360.0f*f, 270.0f, col, 0.14f, 1.2f);
 }
 
-static void GAnim_Shout(float sc, float p, float t, uint32_t col)
+static void GAnim_Aurora(float sc, float p, float t, uint32_t col)
 {
     float f = p / 100.0f;
     float R = 90.0f * sc;
@@ -1294,7 +1294,7 @@ using AnimFn = void(*)(float, float, float, uint32_t);
 static const AnimFn kAnimFns[20] = {
     GAnim_CircleFill,   GAnim_DragonEye,    GAnim_NordicRunes,  GAnim_PixelBlocks,
     GAnim_OrbitDots,    GAnim_CompassRose,  GAnim_Snowflake,    GAnim_LinearBar,
-    GAnim_SoulGem,      GAnim_DwemerCogs,   GAnim_Shout,        GAnim_Constellation,
+    GAnim_Cauldron,     GAnim_DwemerCogs,   GAnim_Aurora,       GAnim_Constellation,
     GAnim_DragonScales, GAnim_Enchantment,  GAnim_WordWall,     GAnim_StandingStone,
     GAnim_TwinMoons,    GAnim_DaedricPortal,GAnim_Waveform,     GAnim_Helix,
 };
