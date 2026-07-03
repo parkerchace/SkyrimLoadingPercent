@@ -31,7 +31,6 @@ Install with a mod manager (Vortex / MO2), or copy the contents of the archive i
 - `SKSE/Plugins/SkyrimLoadingPercent.ini` — built-in default settings (the MCM overrides it at runtime)
 - `Scripts/SkyrimLoadingPercentMCM.pex`
 - `MCM/Config/SkyrimLoadingPercent/config.json` + `settings.ini`
-- `interface/LoadingMenu.swf` — renders the widget inside the loading movie. Optional: if it's omitted, or another loading-screen mod overrides it, the plugin falls back to drawing the overlay directly.
 
 Enable the ESP in your load order (after `SkyUI_SE.esp` and `MCMHelper.esp`). Launch through SKSE.
 
@@ -56,8 +55,8 @@ The overlay is drawn through Scaleform (GFx) into the loading-screen movie — t
 | ENB (incl. ENB Frame Generation) | Compatible |
 | Community Shaders (incl. its Upscaler) | Compatible |
 | PureDark Upscaler (AIO & older per-game builds) | Compatible |
-| Other upscaling / frame-generation mods | Compatible |
-| Custom loading-screen SWFs | Supported — a SWF exposing `_root.progress_canvas` receives progress/config via ActionScript variables |
+| Other upscaling / frame-generation mods | Should be compatible, but please comment! |
+| Loading-screen replacers (`LoadingMenu.swf`) | Compatible — this mod ships no SWF of its own; the overlay draws into whatever loading movie is active |
 
 ## Building
 

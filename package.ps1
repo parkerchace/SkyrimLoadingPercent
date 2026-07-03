@@ -19,7 +19,6 @@ New-Item -ItemType Directory -Force `
     "$data\SKSE\Plugins", `
     "$data\Scripts", `
     "$data\MCM\Config\SkyrimLoadingPercent", `
-    "$data\interface", `
     "$pkg\fomod" | Out-Null
 
 # Plugin + default INI
@@ -31,8 +30,6 @@ Copy-Item "$root\Scripts\SkyrimLoadingPercentMCM.pex"            "$data\Scripts\
 # MCM-Helper config
 Copy-Item "$root\MCM\Config\SkyrimLoadingPercent\config.json"    "$data\MCM\Config\SkyrimLoadingPercent\"
 Copy-Item "$root\MCM\Config\SkyrimLoadingPercent\settings.ini"   "$data\MCM\Config\SkyrimLoadingPercent\"
-# Custom loading movie (plugin falls back to direct draw if absent/overridden)
-Copy-Item "$root\interface\LoadingMenu.swf"                      "$data\interface\"
 # FOMOD meta so MO2/Vortex show name/version/author
 Copy-Item "$root\fomod\info.xml"                                 "$pkg\fomod\"
 # Docs / attribution
