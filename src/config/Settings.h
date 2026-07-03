@@ -54,7 +54,8 @@ public:
     // Where to draw "Press any key to continue" (0-4 same as position; 5 = center)
     int promptPosition{ 5 };
 
-    // Write each load's duration to SkyrimLoadingPercent_times.log
+    // Write each load's duration to SkyrimLoadingPercent_times.log in the SKSE log dir
+    // (Documents/My Games/Skyrim Special Edition/SKSE), via SKSE::log::log_directory()
     bool logLoadTimes{ false };
 
     static constexpr auto kIniPath    = L"Data/SKSE/Plugins/SkyrimLoadingPercent.ini";

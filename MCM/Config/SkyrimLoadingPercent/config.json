@@ -163,7 +163,7 @@
                     "id": "bLogLoadTimes:General",
                     "text": "Log Load Times",
                     "type": "toggle",
-                    "help": "Write each load's duration to Data/SKSE/Plugins/SkyrimLoadingPercent_times.log. Useful for comparing load-time optimization mods.",
+                    "help": "Write each load's duration to SkyrimLoadingPercent_times.log in your SKSE logs folder (Documents/My Games/Skyrim Special Edition/SKSE), alongside SKSE.log. Useful for comparing load-time optimization mods.",
                     "valueOptions": { "sourceType": "ModSettingBool" }
                 }
             ]
