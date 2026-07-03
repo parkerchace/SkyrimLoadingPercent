@@ -102,6 +102,12 @@ if(SKYRIM_PATH)
         COMMAND ${CMAKE_COMMAND} -E copy
             "${CMAKE_SOURCE_DIR}/MCM/Config/SkyrimLoadingPercent/settings.ini"
             "${SKYRIM_PATH}/MCM/Config/SkyrimLoadingPercent/settings.ini"
+        # interface SWF — the custom loading movie (plugin falls back to direct draw if absent)
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${SKYRIM_PATH}/interface"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_SOURCE_DIR}/interface/LoadingMenu.swf"
+            "${SKYRIM_PATH}/interface/LoadingMenu.swf"
         VERBATIM
     )
 endif()

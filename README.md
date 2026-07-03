@@ -22,12 +22,13 @@ An SKSE plugin that draws a live animation and a real-time load percentage on Sk
 ## Install
 
 Install with a mod manager (Vortex / MO2), or copy the contents of the archive into your `Data` folder:
-1
 
 - `SkyrimLoadingPercent.esp` — registers the MCM (a start-game-enabled quest)
 - `SKSE/Plugins/SkyrimLoadingPercent.dll`
+- `SKSE/Plugins/SkyrimLoadingPercent.ini` — built-in default settings (the MCM overrides it at runtime)
 - `Scripts/SkyrimLoadingPercentMCM.pex`
 - `MCM/Config/SkyrimLoadingPercent/config.json` + `settings.ini`
+- `interface/LoadingMenu.swf` — renders the widget inside the loading movie. Optional: if it's omitted, or another loading-screen mod overrides it, the plugin falls back to drawing the overlay directly.
 
 Enable the ESP in your load order (after `SkyUI_SE.esp` and `MCMHelper.esp`). Launch through SKSE.
 
