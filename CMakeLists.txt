@@ -91,7 +91,7 @@ if(SKYRIM_PATH)
             -P "${CMAKE_SOURCE_DIR}/cmake/copy_if_missing.cmake"
         # ESP — always overwrite (structure never changes)
         COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_SOURCE_DIR}/SKSE/Plugins/SkyrimLoadingPercent.esp"
+            "${CMAKE_SOURCE_DIR}/SkyrimLoadingPercent.esp"
             "${SKYRIM_PATH}/SkyrimLoadingPercent.esp"
         # MCMHelper config — always overwrite (structure/content may improve across builds)
         COMMAND ${CMAKE_COMMAND} -E make_directory
