@@ -32,7 +32,6 @@ include("${commonlibsse_SOURCE_DIR}/cmake/CommonLibSSE.cmake")
 # ── vcpkg-provided dependencies ───────────────────────────────────────────────
 find_package(minhook CONFIG REQUIRED)
 find_package(spdlog  CONFIG REQUIRED)
-find_package(imgui   CONFIG REQUIRED)
 
 # ── Plugin target ─────────────────────────────────────────────────────────────
 set(SOURCES
@@ -40,7 +39,6 @@ set(SOURCES
     src/ProgressTracker.cpp
     src/hooks/FileIOHook.cpp
     src/ui/ScaleformManager.cpp
-    src/ui/D3DOverlay.cpp
     src/config/Settings.cpp
 )
 
@@ -62,9 +60,7 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE
         minhook::minhook
         spdlog::spdlog
-        imgui::imgui
-        d3d11
-        dxgi
+        xinput.lib
 )
 
 target_compile_options(${PROJECT_NAME}
@@ -85,11 +81,27 @@ set(SKYRIM_PATH "" CACHE PATH "Path to Skyrim SE/AE Data folder (optional)")
 
 if(SKYRIM_PATH)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        # DLL — always overwrite (it's the build output)
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}>
             "${SKYRIM_PATH}/SKSE/Plugins/${PROJECT_NAME}.dll"
+        # INI — only deploy on first install; never overwrite user changes
+        COMMAND ${CMAKE_COMMAND}
+            -DSRC="${CMAKE_SOURCE_DIR}/SKSE/Plugins/SkyrimLoadingPercent.ini"
+            -DDST="${SKYRIM_PATH}/SKSE/Plugins/SkyrimLoadingPercent.ini"
+            -P "${CMAKE_SOURCE_DIR}/cmake/copy_if_missing.cmake"
+        # ESP — always overwrite (structure never changes)
         COMMAND ${CMAKE_COMMAND} -E copy
-            "${CMAKE_SOURCE_DIR}/SKSE/Plugins/SkyrimLoadingPercent.ini"
-            "${SKYRIM_PATH}/SKSE/Plugins/SkyrimLoadingPercent.ini"
+            "${CMAKE_SOURCE_DIR}/SKSE/Plugins/SkyrimLoadingPercent.esp"
+            "${SKYRIM_PATH}/SkyrimLoadingPercent.esp"
+        # MCMHelper config — always overwrite (structure/content may improve across builds)
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${SKYRIM_PATH}/MCM/Config/SkyrimLoadingPercent"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_SOURCE_DIR}/MCM/Config/SkyrimLoadingPercent/config.json"
+            "${SKYRIM_PATH}/MCM/Config/SkyrimLoadingPercent/config.json"
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_SOURCE_DIR}/MCM/Config/SkyrimLoadingPercent/settings.ini"
+            "${SKYRIM_PATH}/MCM/Config/SkyrimLoadingPercent/settings.ini"
         VERBATIM
     )
 endif()

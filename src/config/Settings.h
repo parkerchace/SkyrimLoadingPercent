@@ -1,4 +1,5 @@
 #pragma once
+#include <mutex>
 
 class Settings {
 public:
@@ -9,11 +10,13 @@ public:
 
     void Load();
     void Save();
-    void SaveCache();   // persists byte-calibration data without touching user-visible keys
 
     // Which animation to display (0-19)
     int  animStyle{ 0 };
     bool randomStyle{ false };  // pick a random style on each load
+    // Waveform and Helix Spiral aren't lore-friendly; excluded from the random
+    // pool unless this is on. Has no effect on a manually-picked animStyle.
+    bool includeNonLoreAnims{ false };
 
     // Where to draw the widget
     // 0=Bottom-Right  1=Bottom-Left  2=Bottom-Center  3=Top-Right  4=Top-Left
@@ -26,21 +29,21 @@ public:
     // Show numeric percentage text
     bool showPercent{ true };
 
-    // Scale factor for the animation widget
+    // Size of the animation widget (1.0 ≈ designed for 1080p)
     float scale{ 0.6f };
+
+    // Size multiplier for the percentage and prompt text (independent of scale)
+    float textScale{ 0.45f };
+
+    // Fine position nudge applied on top of the position preset, in 1280×720 stage units
+    int offsetX{ 0 };
+    int offsetY{ 0 };
 
     // RGB color for the primary highlight (default: aged parchment/stone — vanilla Skyrim UI)
     unsigned int color{ 0xFFD4D0BE };
 
     // Widget opacity: 1.0 = opaque, lower lets Skyrim's art show through
     float overlayAlpha{ 1.0f };
-
-    // Bytes read during the last completed load — used as denominator for GetProgress().
-    // Persisted so the first load of each session has a real estimate.
-    uint64_t lastStreamCount{ 0 };
-
-    // Virtual key code for the menu toggle key. Default 220 = VK_OEM_5 = backslash on US layouts.
-    int menuKey{ 220 };
 
     // Hold the overlay on screen after 100% until the player presses a key
     bool holdScreen{ false };
@@ -51,7 +54,14 @@ public:
     // Where to draw "Press any key to continue" (0-4 same as position; 5 = center)
     int promptPosition{ 5 };
 
-    static constexpr auto kIniPath = L"Data/SKSE/Plugins/SkyrimLoadingPercent.ini";
+    // Write each load's duration to SkyrimLoadingPercent_times.log
+    bool logLoadTimes{ false };
+
+    static constexpr auto kIniPath    = L"Data/SKSE/Plugins/SkyrimLoadingPercent.ini";
+    // MCMHelper writes user overrides here; we read it after kIniPath so MCM takes priority.
+    static constexpr auto kMcmIniPath = L"Data/MCM/Settings/SkyrimLoadingPercent.ini";
+
+    std::mutex iniMutex;  // serialises Save() across threads
 
 private:
     Settings() = default;

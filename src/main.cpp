@@ -2,7 +2,6 @@
 #include "config/Settings.h"
 #include "hooks/FileIOHook.h"
 #include "ui/ScaleformManager.h"
-#include "ui/D3DOverlay.h"
 #include "ProgressTracker.h"
 
 namespace {
@@ -10,16 +9,12 @@ namespace {
 void OnDataLoaded() {
     ScaleformManager::RegisterMenuSink();
     ScaleformManager::InstallThreadHook();
+    ProgressTracker::GetSingleton().RegisterCellAttachSink();
 }
 
 void OnPostLoadGame(bool success) {
     if (success) {
-        // Signal D3DOverlay to start the drain animation and linger timer.
         ProgressTracker::GetSingleton().OnLoadComplete();
-        // Block the game thread here. Skyrim SE's render thread is independent,
-        // so the loading screen continues to animate (3D model spins, tips cycle).
-        // The game stays in loading state until ReleaseLoadingMenuHold is called
-        // by D3DOverlay when the linger timer (or key press) expires.
         ScaleformManager::WaitForHoldRelease();
     }
 }
@@ -65,21 +60,11 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     SKSE::Init(a_skse);
     Settings::GetSingleton().Load();
 
-    // Prime the byte-denominator from the last saved load so the first load
-    // of this session uses a real estimate instead of the 20 MB fallback.
-    if (auto saved = Settings::GetSingleton().lastStreamCount; saved > 0)
-        ProgressTracker::GetSingleton().SeedEstimate(static_cast<LONGLONG>(saved));
-
     // FileIOHook calls MH_Initialize and creates the file hooks.
     if (!FileIOHook::Install()) {
         logger::error("Failed to install FileIO hooks — aborting");
         return false;
     }
-
-    // D3DOverlay hooks D3D11CreateDeviceAndSwapChain so it can intercept the
-    // game's own device+swapchain creation (which happens a few seconds later,
-    // before kDataLoaded).  Must be installed HERE — by kDataLoaded it's too late.
-    D3DOverlay::Install();  // non-fatal; game still runs without overlay
 
     auto* msg = SKSE::GetMessagingInterface();
     if (!msg) {

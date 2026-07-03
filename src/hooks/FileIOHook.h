@@ -2,5 +2,4 @@
 
 namespace FileIOHook {
     bool Install();
-    void Uninstall();
 }

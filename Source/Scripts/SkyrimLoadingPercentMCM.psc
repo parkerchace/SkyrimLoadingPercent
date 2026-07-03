@@ -1,0 +1,1 @@
+Scriptname SkyrimLoadingPercentMCM extends MCM_ConfigBase

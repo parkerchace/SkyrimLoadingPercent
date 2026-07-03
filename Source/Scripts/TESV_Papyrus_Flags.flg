@@ -1,0 +1,14 @@
+Flag Hidden 0
+{
+  Script
+  Function
+  Property
+  Variable
+  Group
+}
+
+Flag Conditional 1
+{
+  Property
+  Variable
+}

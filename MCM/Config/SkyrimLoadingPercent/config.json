@@ -1,0 +1,172 @@
+{
+    "modName": "SkyrimLoadingPercent",
+    "displayName": "Loading Percent",
+    "pages": [
+        {
+            "pageDisplayName": "Animation",
+            "content": [
+                {
+                    "id": "iAnimationStyle:General",
+                    "text": "Animation Style",
+                    "type": "enum",
+                    "help": "Which animation to display. Ignored when Random Style is on.",
+                    "valueOptions": {
+                        "sourceType": "ModSettingInt",
+                        "options": [
+                            "Circle Fill", "Dragon Eye", "Nordic Runes", "Pixel Blocks",
+                            "Orbit Dots", "Compass Rose", "Snowflake", "Progress Bar",
+                            "Soul Gem", "Dwemer Cogs", "Shout", "Constellation",
+                            "Dragon Scales", "Enchantment", "Word Wall", "Standing Stone",
+                            "Twin Moons", "Daedric Portal", "Waveform", "Helix Spiral"
+                        ]
+                    }
+                },
+                {
+                    "id": "bRandomStyle:General",
+                    "text": "Random Style",
+                    "type": "toggle",
+                    "help": "Cycle through the animations in random order, each one playing once before any repeat. Overrides Animation Style while on.",
+                    "valueOptions": { "sourceType": "ModSettingBool" }
+                },
+                {
+                    "id": "bIncludeNonLoreAnims:General",
+                    "text": "  Include Non-Lore-Friendly Animations",
+                    "type": "toggle",
+                    "help": "Waveform and Helix Spiral aren't Skyrim-themed. Off by default; only used by Random Style — has no effect when manually picking Animation Style.",
+                    "valueOptions": { "sourceType": "ModSettingBool" }
+                },
+                {
+                    "id": "bShowAnimation:Display",
+                    "text": "Show Animation",
+                    "type": "toggle",
+                    "help": "Show the animation widget. Percentage tracking still works when off.",
+                    "valueOptions": { "sourceType": "ModSettingBool" }
+                },
+                {
+                    "id": "bShowPercentage:Display",
+                    "text": "Show Percentage",
+                    "type": "toggle",
+                    "help": "Display the numeric load percentage beside the animation.",
+                    "valueOptions": { "sourceType": "ModSettingBool" }
+                }
+            ]
+        },
+        {
+            "pageDisplayName": "Appearance",
+            "content": [
+                {
+                    "id": "iPosition:General",
+                    "text": "Position",
+                    "type": "enum",
+                    "help": "Where to anchor the overlay on screen.",
+                    "valueOptions": {
+                        "sourceType": "ModSettingInt",
+                        "options": [
+                            "Bottom-Right", "Bottom-Left", "Bottom-Center",
+                            "Top-Right", "Top-Left", "Top-Center"
+                        ]
+                    }
+                },
+                {
+                    "id": "iOffsetX:Display",
+                    "text": "Offset X",
+                    "type": "slider",
+                    "help": "Fine horizontal nudge from the anchor (negative = left).",
+                    "valueOptions": {
+                        "min": -640, "max": 640, "step": 10,
+                        "sourceType": "ModSettingInt"
+                    }
+                },
+                {
+                    "id": "iOffsetY:Display",
+                    "text": "Offset Y",
+                    "type": "slider",
+                    "help": "Fine vertical nudge from the anchor (negative = up).",
+                    "valueOptions": {
+                        "min": -360, "max": 360, "step": 10,
+                        "sourceType": "ModSettingInt"
+                    }
+                },
+                {
+                    "id": "fScale:Display",
+                    "text": "Animation Size",
+                    "type": "slider",
+                    "help": "Size of the animation widget. 1.0 is designed for 1080p.",
+                    "valueOptions": {
+                        "min": 0.2, "max": 3.0, "step": 0.05, "formatString": "{2}",
+                        "sourceType": "ModSettingFloat"
+                    }
+                },
+                {
+                    "id": "fTextScale:Display",
+                    "text": "Text Size",
+                    "type": "slider",
+                    "help": "Size of the percentage and prompt text, independent of animation size.",
+                    "valueOptions": {
+                        "min": 0.3, "max": 3.0, "step": 0.05, "formatString": "{2}",
+                        "sourceType": "ModSettingFloat"
+                    }
+                },
+                {
+                    "id": "fOverlayAlpha:Display",
+                    "text": "Opacity",
+                    "type": "slider",
+                    "help": "Overlay opacity. 1.0 is fully opaque.",
+                    "valueOptions": {
+                        "min": 0.1, "max": 1.0, "step": 0.05, "formatString": "{2}",
+                        "sourceType": "ModSettingFloat"
+                    }
+                },
+                {
+                    "id": "iColor:Display",
+                    "text": "Color",
+                    "type": "color",
+                    "help": "Primary color of the animation and text.",
+                    "valueOptions": { "sourceType": "ModSettingInt" }
+                }
+            ]
+        },
+        {
+            "pageDisplayName": "Behavior",
+            "content": [
+                {
+                    "id": "bHoldScreen:General",
+                    "text": "Hold at 100%",
+                    "type": "toggle",
+                    "help": "Keep the loading screen open at 100% until you press a key.",
+                    "valueOptions": { "sourceType": "ModSettingBool" }
+                },
+                {
+                    "id": "iLingerSeconds:General",
+                    "text": "Linger Seconds",
+                    "type": "slider",
+                    "help": "Extra seconds to stay at 100% before the screen closes (0 = off).",
+                    "valueOptions": {
+                        "min": 0, "max": 120, "step": 1,
+                        "sourceType": "ModSettingInt"
+                    }
+                },
+                {
+                    "id": "iPromptPosition:General",
+                    "text": "Prompt Position",
+                    "type": "enum",
+                    "help": "Where the 'Press any key' prompt appears (when Hold at 100% is on).",
+                    "valueOptions": {
+                        "sourceType": "ModSettingInt",
+                        "options": [
+                            "Bottom-Right", "Bottom-Left", "Bottom-Center",
+                            "Top-Right", "Top-Left", "Center"
+                        ]
+                    }
+                },
+                {
+                    "id": "bLogLoadTimes:General",
+                    "text": "Log Load Times",
+                    "type": "toggle",
+                    "help": "Write each load's duration to Data/SKSE/Plugins/SkyrimLoadingPercent_times.log. Useful for comparing load-time optimization mods.",
+                    "valueOptions": { "sourceType": "ModSettingBool" }
+                }
+            ]
+        }
+    ]
+}
