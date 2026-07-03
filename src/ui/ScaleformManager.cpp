@@ -77,7 +77,7 @@ static RE::UI_MESSAGE_RESULTS HookProcessMessage(RE::IMenu* a_this, RE::UIMessag
         // tick clears everything once the menu is fully gone.
         if (a_this && a_this->uiMovie) {
             auto* mv = a_this->uiMovie.get();
-            mv->Invoke("_root.clear", nullptr, nullptr, 0);
+            mv->Invoke("_root.slpAnim.clear", nullptr, nullptr, 0);
             RE::GFxValue tf, r;
             mv->GetVariable(&tf, "_root.slpT");
             if (tf.IsObject()) tf.Invoke("removeTextField", &r, nullptr, 0);
@@ -105,19 +105,38 @@ static float s_xAspectCorr = 1.0f;
 static constexpr float kPi  = 3.14159265f;
 static constexpr float kDeg = kPi / 180.0f;
 
-// Low-level GFx Invoke wrappers — draw on _root directly (immune to timeline resets)
-static void GClear() { s_mv->Invoke("_root.clear", nullptr, nullptr, 0); }
+// The animation is drawn into a dedicated high-depth movieclip rather than _root's
+// own shape layer, so it renders ABOVE the loading-screen art on every SWF — vanilla
+// or a third-party LoadingMenu.swf replacer (e.g. Oblivion-style loading menus) — and
+// so clearing it never disturbs vanilla content. The percent/prompt text fields sit
+// just above it. Created lazily; it survives across frames like the text fields.
+static constexpr double kAnimClipDepth = 10000.0;
+static void GEnsureAnimClip(RE::GFxMovieView* mv) {
+    RE::GFxValue clip;
+    mv->GetVariable(&clip, "_root.slpAnim");
+    if (clip.IsObject()) return;
+    RE::GFxValue root;
+    mv->GetVariable(&root, "_root");
+    if (!root.IsObject()) return;
+    RE::GFxValue a[2];
+    a[0].SetString("slpAnim");
+    a[1].SetNumber(kAnimClipDepth);
+    root.Invoke("createEmptyMovieClip", nullptr, a, 2);
+}
+
+// Low-level GFx Invoke wrappers — draw into the dedicated _root.slpAnim clip.
+static void GClear() { s_mv->Invoke("_root.slpAnim.clear", nullptr, nullptr, 0); }
 static void GMoveTo(double x, double y) {
     RE::GFxValue a[2];
     a[0].SetNumber(x * double(s_xAspectCorr) + s_animCX);
     a[1].SetNumber(y + s_animCY);
-    s_mv->Invoke("_root.moveTo", nullptr, a, 2);
+    s_mv->Invoke("_root.slpAnim.moveTo", nullptr, a, 2);
 }
 static void GLineTo(double x, double y) {
     RE::GFxValue a[2];
     a[0].SetNumber(x * double(s_xAspectCorr) + s_animCX);
     a[1].SetNumber(y + s_animCY);
-    s_mv->Invoke("_root.lineTo", nullptr, a, 2);
+    s_mv->Invoke("_root.slpAnim.lineTo", nullptr, a, 2);
 }
 // alpha in [0,1], multiplied by s_ga inside
 static void GLineStyle(double thick, uint32_t rgb, float alpha) {
@@ -125,16 +144,16 @@ static void GLineStyle(double thick, uint32_t rgb, float alpha) {
     a[0].SetNumber(thick);
     a[1].SetNumber(double(rgb & 0xFFFFFF));
     a[2].SetNumber(double(alpha * s_ga * 100.0f));
-    s_mv->Invoke("_root.lineStyle", nullptr, a, 3);
+    s_mv->Invoke("_root.slpAnim.lineStyle", nullptr, a, 3);
 }
-static void GNoLine() { s_mv->Invoke("_root.lineStyle", nullptr, nullptr, 0); }
+static void GNoLine() { s_mv->Invoke("_root.slpAnim.lineStyle", nullptr, nullptr, 0); }
 static void GBeginFill(uint32_t rgb, float alpha) {
     RE::GFxValue a[2];
     a[0].SetNumber(double(rgb & 0xFFFFFF));
     a[1].SetNumber(double(alpha * s_ga * 100.0f));
-    s_mv->Invoke("_root.beginFill", nullptr, a, 2);
+    s_mv->Invoke("_root.slpAnim.beginFill", nullptr, a, 2);
 }
-static void GEndFill() { s_mv->Invoke("_root.endFill", nullptr, nullptr, 0); }
+static void GEndFill() { s_mv->Invoke("_root.slpAnim.endFill", nullptr, nullptr, 0); }
 
 // Convert IM_COL32-style alpha (0-255) to [0,1] for passing to helpers
 static float A255(int a) { return a / 255.0f; }
@@ -1326,7 +1345,7 @@ static void GfxInit(RE::GFxMovieView* mv)
     // Defensive clear: wipe any stale drawing left on the cached movie.
     // The CLOSE-handler clear can be skipped (console-open early-return, s_mv null,
     // etc.). This runs before any draw so the 1-tick blank is imperceptible.
-    mv->Invoke("_root.clear", nullptr, nullptr, 0);
+    mv->Invoke("_root.slpAnim.clear", nullptr, nullptr, 0);
     RE::GFxValue _tf, _r;
     mv->GetVariable(&_tf, "_root.slpT");
     if (_tf.IsObject()) _tf.Invoke("removeTextField", &_r, nullptr, 0);
@@ -1474,6 +1493,7 @@ static void GfxUpdate(RE::GFxMovieView* mv)
 
     float sc    = cfg.scale * s_stageH / 1080.0f;
     float animR = 100.0f * sc;  // hoisted — shared by percent and prompt sizing
+    GEnsureAnimClip(mv);  // (re)create the high-depth draw clip if the movie was rebuilt
     GClear();
 
     if (cfg.showAnimation) {
@@ -1588,7 +1608,7 @@ static void HookAdvanceMovie(RE::IMenu* a_menu, float a_interval, std::uint32_t 
             } else if (g_gfxCreated && shouldDraw) {
                 GfxUpdate(mv);
             } else if (g_gfxCreated) {
-                mv->Invoke("_root.clear", nullptr, nullptr, 0);
+                mv->Invoke("_root.slpAnim.clear", nullptr, nullptr, 0);
                 g_gfxCreated = false;
             }
         }
@@ -1596,7 +1616,7 @@ static void HookAdvanceMovie(RE::IMenu* a_menu, float a_interval, std::uint32_t 
         // Menu closed. Clear root drawing once on GFx path so no frozen frame shows
         // during the loading screen's fade-out animation.
         if (g_gfxCreated) {
-            mv->Invoke("_root.clear", nullptr, nullptr, 0);
+            mv->Invoke("_root.slpAnim.clear", nullptr, nullptr, 0);
             RE::GFxValue tf, r;
             mv->GetVariable(&tf, "_root.slpT"); tf.Invoke("removeTextField", &r, nullptr, 0);
             mv->GetVariable(&tf, "_root.slpK"); tf.Invoke("removeTextField", &r, nullptr, 0);
@@ -1629,7 +1649,7 @@ public:
             s_frozenAtComplete = false;
             s_display = 0.0f;
             if (g_gfxCreated && s_mv) {
-                s_mv->Invoke("_root.clear", nullptr, nullptr, 0);
+                s_mv->Invoke("_root.slpAnim.clear", nullptr, nullptr, 0);
                 RE::GFxValue tf, r;
                 s_mv->GetVariable(&tf, "_root.slpT");
                 if (tf.IsObject()) tf.Invoke("removeTextField", &r, nullptr, 0);
@@ -1697,7 +1717,7 @@ public:
             // rely on it as the sole clear path — stale drawing would persist and
             // become visible behind the debug console and in subsequent loads.
             if (g_gfxCreated && s_mv) {
-                s_mv->Invoke("_root.clear", nullptr, nullptr, 0);
+                s_mv->Invoke("_root.slpAnim.clear", nullptr, nullptr, 0);
                 RE::GFxValue tf, r;
                 s_mv->GetVariable(&tf, "_root.slpT");
                 if (tf.IsObject()) tf.Invoke("removeTextField", &r, nullptr, 0);
