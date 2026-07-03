@@ -19,6 +19,9 @@ An SKSE plugin that draws a live animation and a real-time load percentage on Sk
 - [SkyUI](https://www.nexusmods.com/skyrimspecialedition/mods/12604)
 - [MCM Helper](https://www.nexusmods.com/skyrimspecialedition/mods/53000)
 
+> **⚠️ Match MCM Helper to your game version — especially on Skyrim SE 1.5.x.**
+> SKSE and **MCM Helper ship separate downloads for each game runtime** (1.5.97 "SE" vs 1.6.x "AE"). On the mod's Files page, install the build that matches *your* Skyrim version. Installing the AE (1.6.x) build of MCM Helper on a 1.5.97 game — or vice-versa — makes the MCM fail to register: the **Loading Percent menu won't appear and your settings won't apply**, even though the DLL itself loads fine. If the menu is missing, this mismatch is the first thing to check. Your exact version is shown in the lower-left of the main menu, and SKSE logs it to `Documents/My Games/Skyrim Special Edition/SKSE/`.
+
 ## Install
 
 Install with a mod manager (Vortex / MO2), or copy the contents of the archive into your `Data` folder:
