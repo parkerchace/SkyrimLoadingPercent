@@ -4,7 +4,30 @@
 #include "ui/ScaleformManager.h"
 #include "ProgressTracker.h"
 
+#include <filesystem>
+
 namespace {
+
+// No Grass In Objects (and its NG fork) generate the grass cache by launching the
+// game with a PrecacheGrass.txt marker in the root folder and keeping ONE loading
+// screen up for the entire multi-minute process. Every active thing this mod does
+// would sabotage that: we hold the loading menu open, draw into it, and post our own
+// kHide to close it once we think the load finished — which would tear down NGIO's
+// persistent screen mid-generation — and our global NtReadFile hook adds overhead to
+// the millions of reads generation performs. Detect the marker exactly the way NGIO
+// does and install nothing, so grass caching runs untouched.
+bool IsGrassGenerationMode() {
+    std::error_code ec;
+    if (std::filesystem::exists(L"PrecacheGrass.txt", ec)) return true;
+    // Fall back to the executable's directory in case the working directory differs.
+    wchar_t exePath[MAX_PATH];
+    if (DWORD n = GetModuleFileNameW(nullptr, exePath, MAX_PATH); n > 0 && n < MAX_PATH) {
+        std::filesystem::path p(exePath);
+        p.replace_filename(L"PrecacheGrass.txt");
+        if (std::filesystem::exists(p, ec)) return true;
+    }
+    return false;
+}
 
 void OnDataLoaded() {
     ScaleformManager::RegisterMenuSink();
@@ -55,9 +78,16 @@ void SetupLog() {
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     SetupLog();
-    logger::info("SkyrimLoadingPercent v3.0.0 loading");
+    logger::info("SkyrimLoadingPercent v3.1.0 loading");
 
     SKSE::Init(a_skse);
+
+    if (IsGrassGenerationMode()) {
+        logger::info("PrecacheGrass.txt detected — grass cache generation in progress; "
+                     "staying inactive so No Grass In Objects can generate untouched.");
+        return true;  // load cleanly but install no hooks or listeners
+    }
+
     Settings::GetSingleton().Load();
 
     // FileIOHook calls MH_Initialize and creates the file hooks.
