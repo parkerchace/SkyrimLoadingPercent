@@ -22,11 +22,13 @@ enum class AssetCat : uint8_t {
     Count
 };
 
-// All progress data is measured from the CURRENT load only — there is no
-// cross-load history, learned estimate, or EMA anywhere. The two percentage
-// signals both have real denominators:
+// ProgressTracker itself measures the CURRENT load only — no cross-load history
+// lives here. Its two percentage signals both have real denominators:
 //   * save parse: bytes read of the .ess ÷ its exact file size
 //   * cell attach: refs attached ÷ total refs of the cells being attached
+// NOTE: the bar's SIGNAL-LESS TAIL (in ScaleformManager) is paced by a learned
+// per-machine duration EMA — the one place cross-load memory is used (2026-08-07).
+// That estimate lives in ScaleformManager, not here; this tracker stays real-only.
 class ProgressTracker {
 public:
     static ProgressTracker& GetSingleton() noexcept {

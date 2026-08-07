@@ -321,6 +321,79 @@ static float s_stageW      = 1280.0f;
 static float s_stageH      = 720.0f;
 // s_animCX / s_animCY declared above (needed by GMoveTo/GLineTo before their first use)
 
+// ── Signal-less tail: paced by learned load duration ────────────────────────────
+// Every load splits into two phases the byte-crawl can't tell apart (measured from
+// real _times.log data): an I/O phase where bytes stream, then a CPU/navmesh/init
+// tail with ZERO byte signal (bytes frozen, save & refs fractions already 1.0). The
+// tail is wildly variable and often INVERSELY sized to the bytes — logs show
+// 6 MB / 40 s tail and 907 MB / 32 s tail alongside 857 MB / 0.02 s tail — so it
+// cannot be measured within a single load.
+//
+// Streaming stays real-byte-driven (the proportional crawl in UpdateLoadingState,
+// rising to ~92). The tail is PACED by how long loads typically take on THIS machine
+// — a rolling EMA of recent total durations, bucketed save vs cell, persisted next to
+// the times log so it's calibrated from the first load of every session. estTail =
+// (learned typical total − this load's actual I/O time), so a fast SSD (short I/O)
+// correctly expects a proportionally longer remaining tail. The bar advances LINEARLY
+// toward 99 over estTail — real "progressing along the percentages" instead of
+// parking — then, if a tail outruns its estimate, eases 99→99.9 rather than pinning;
+// if it finishes early, the completion drain snaps up. This is the one place the bar
+// uses cross-load memory (chose 2026-08-07, user asked for best-effort accuracy over
+// strict real-signals-only); it only paces the tail, and 100 stays gated on the real
+// completion event, so it can never lie about being done.
+static constexpr float kTailStartDelayMs = 400.0f;  // ms of quiet before tail pacing begins
+static constexpr float kMinTailSec       = 0.4f;    // floor for the estimated remaining tail
+static constexpr float kTailOverTau      = 6.0f;    // s; ease 99→99.9 when a tail outruns its estimate
+static constexpr float kRefsDoneFloor    = 85.0f;   // cell refs all attached → lift tail start off a low byte number
+static constexpr float kTailCreepCap     = 99.9f;   // the tail never claims 100
+
+// Learned per-machine duration estimate (seconds), bucketed save vs cell. Read on the
+// game thread at menu open, updated at menu close, read every frame in UpdateLoadingState
+// (UI thread) — atomics keep that cross-thread access clean. Defaults are rough; they
+// converge to the real machine profile within a few loads and persist across sessions.
+static std::atomic<float> s_estTotalSave{ 5.0f };
+static std::atomic<float> s_estTotalCell{ 4.0f };
+static std::atomic<bool>  s_timingLoaded{ false };
+
+static void LoadTimingEstimates() {
+    if (s_timingLoaded.exchange(true)) return;  // once per session
+    auto dir = SKSE::log::log_directory();
+    if (!dir) return;
+    std::ifstream f(*dir / "SkyrimLoadingPercent_timing.ini");
+    if (!f) return;
+    std::string line;
+    while (std::getline(f, line)) {
+        auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        float val = 0.0f;
+        try { val = std::stof(line.substr(eq + 1)); } catch (...) { continue; }
+        if (val < 0.3f || val > 60.0f) continue;  // reject garbage/idle sentinels
+        std::string key = line.substr(0, eq);
+        if      (key == "save") s_estTotalSave.store(val, std::memory_order_relaxed);
+        else if (key == "cell") s_estTotalCell.store(val, std::memory_order_relaxed);
+    }
+}
+
+static void SaveTimingEstimates() {
+    auto dir = SKSE::log::log_directory();
+    if (!dir) return;
+    std::ofstream f(*dir / "SkyrimLoadingPercent_timing.ini", std::ios::trunc);
+    if (!f) return;
+    f << std::fixed << std::setprecision(2)
+      << "save=" << s_estTotalSave.load(std::memory_order_relaxed) << "\n"
+      << "cell=" << s_estTotalCell.load(std::memory_order_relaxed) << "\n";
+}
+
+// EMA update from one completed load. Idle/garbage durations (menu left open for
+// minutes/hours — the log's 150000s sentinels) and sub-0.3s noise are rejected.
+static void UpdateTimingEstimate(float observedTotalSec, bool isSave) {
+    if (observedTotalSec < 0.3f || observedTotalSec > 60.0f) return;
+    auto& slot = isSave ? s_estTotalSave : s_estTotalCell;
+    float prev = slot.load(std::memory_order_relaxed);
+    slot.store(0.75f * prev + 0.25f * observedTotalSec, std::memory_order_relaxed);  // EMA
+    SaveTimingEstimates();
+}
+
 // ── State machine ─────────────────────────────────────────────────────────────
 static void UpdateLoadingState()
 {
@@ -440,29 +513,54 @@ static void UpdateLoadingState()
             : 15.0f * (fRefs > 0.0 ? static_cast<float>(fRefs) : 0.0f);
 
         double mb    = static_cast<double>(tracker.GetBytesThisLoad()) / (1024.0 * 1024.0);
-        float  crawl = 84.0f * static_cast<float>(1.0 - std::exp(-mb / 80.0));
+        // Decay tuned from _times.log: the big cold loads that used to hang cluster
+        // at 350–920 MB (median 316, p90 817), so /200 keeps the crawl rising across
+        // that whole range (~98% at 800 MB) instead of saturating by ~300 MB (the old
+        // /80) and then plateauing for the rest of the stream. Coefficient 77 so
+        // base+crawl approaches ~92, never racing to 99 mid-stream — the last ~8
+        // points are reserved for the signal-less tail creep and the completion snap,
+        // so there is no fixed ceiling to hang at and no lurch to 100 at the end.
+        float  crawl = 77.0f * static_cast<float>(1.0 - std::exp(-mb / 200.0));
 
         float target   = std::clamp(base + crawl, 0.0f, 99.0f);
         float rampRate = 0.10f;
 
-        // Cached/fast-load rescue (cell loads only): the byte-crawl can only
-        // report "whatever small number the bytes reached" for a load that was
-        // served almost entirely from the OS cache — a 20 KB transition lands
-        // near 13%, then the real completion event snaps it to 100. That low
-        // number was never a fraction of anything. When the cell's references
-        // are (essentially) all attached AND byte I/O has gone quiet, the load
-        // is genuinely finished — no more data is coming — so ride the target up
-        // to ~99 (at a snappier rate, since we know it's basically done) instead
-        // of sitting on a fabricated low byte number. This can only trip when
-        // streaming has stopped, so a COLD load (disk still churning,
-        // s_lastIoChange keeps refreshing) never enters here and its byte-crawl
-        // is untouched. 100% remains gated on the completion event.
-        if (!tracker.WasSaveLoad() && fRefs >= 0.98) {
-            float ioQuietMs = std::chrono::duration<float, std::milli>(
-                std::chrono::steady_clock::now() - s_lastIoChange).count();
-            if (ioQuietMs >= 150.0f) {
-                target   = 99.0f;
-                rampRate = 0.25f;
+        // No hard ceiling: the crawl asymptotes to ~92 on its own (see above), so the
+        // bar rises proportionally through the whole stream rather than pinning at a
+        // fixed value and lurching. ceilQuietMs (time since the byte counter last
+        // moved) is the "is data still flowing" signal that drives the tail creep.
+        float ceilQuietMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - s_lastIoChange).count();
+
+        // Signal-less tail, paced by learned duration (see constants + helpers above).
+        // Once byte I/O has gone quiet, streaming is done but the load isn't — the
+        // CPU/nav/init tail has nothing measurable. Advance the bar toward 99 over the
+        // time this machine's loads TYPICALLY still need, so it keeps progressing
+        // through real percentages instead of parking near 99.
+        if (ceilQuietMs > kTailStartDelayMs) {
+            float tailElapsed = ceilQuietMs / 1000.0f;                 // since I/O went quiet
+            float ioElapsed   = std::chrono::duration<float>(s_lastIoChange - s_loadStart).count();
+            if (ioElapsed < 0.0f) ioElapsed = 0.0f;
+            float estTotal = (tracker.WasSaveLoad() ? s_estTotalSave : s_estTotalCell)
+                                 .load(std::memory_order_relaxed);
+            float estTail  = (std::max)(estTotal - ioElapsed, kMinTailSec);
+
+            // A cache-served cell load reads almost nothing, so its byte-crawl is a
+            // fabricated low number; but refs all attached means the cell is fully
+            // populated, so start its tail climb from a sensible floor, not from ~15.
+            float startLevel = target;
+            if (!tracker.WasSaveLoad() && fRefs >= 0.98)
+                startLevel = (std::max)(target, kRefsDoneFloor);
+
+            float p = tailElapsed / estTail;
+            float paced = (p <= 1.0f)
+                ? startLevel + (99.0f - startLevel) * p                 // linear to 99 over the estimate
+                : 100.0f - (100.0f - 99.0f) *
+                      std::exp(-(tailElapsed - estTail) / kTailOverTau); // outran the estimate → ease 99→99.9
+            paced = (std::min)(paced, kTailCreepCap);
+            if (paced > target) {
+                target   = paced;
+                rampRate = 0.20f;  // track the paced target responsively
             }
         }
 
@@ -1707,6 +1805,7 @@ public:
             s_openSeen           = true;
             s_loadStart        = std::chrono::steady_clock::now();
             s_lastIoChange     = s_loadStart;
+            LoadTimingEstimates();  // once per session — powers the tail pacing
             logger::info("MenuEventSink: Loading Menu opened (style={})", s_activeStyle);
         } else {
             g_holdActive.store(false, std::memory_order_release);
@@ -1734,6 +1833,15 @@ public:
             s_hidePending.store(false, std::memory_order_relaxed);
             s_display          = 0.0f;
             s_mv               = nullptr;
+
+            // Feed this load's real total duration into the learned per-machine
+            // estimate that paces the tail (always on, independent of the times-log
+            // toggle). WasSaveLoad() is still valid here — Reset() above preserves it.
+            if (s_openSeen) {
+                float total = std::chrono::duration<float>(
+                    std::chrono::steady_clock::now() - s_loadStart).count();
+                UpdateTimingEstimate(total, ProgressTracker::GetSingleton().WasSaveLoad());
+            }
 
             auto& cfg2 = Settings::GetSingleton();
             if (cfg2.logLoadTimes && s_openSeen) {
