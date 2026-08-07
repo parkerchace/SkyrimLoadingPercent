@@ -1644,6 +1644,22 @@ static void HookAdvanceMovie(RE::IMenu* a_menu, float a_interval, std::uint32_t 
     // Nothing to do when closed and no C++ clip exists and no custom SWF running.
     if (!menuOpen && !g_gfxCreated && !g_customSwf) return;
 
+    // LoadingMenu does not override AdvanceMovie (vtbl[5]) — nor do many other menus,
+    // e.g. DialogueMenu — so they all share IMenu's base implementation. Hooking
+    // "LoadingMenu's AdvanceMovie" therefore hooks that SHARED function: it fires for
+    // every menu using it, not just loading screens. The flags above only tell us a
+    // loading overlay MIGHT be active; they don't tell us a_menu actually IS the
+    // LoadingMenu. Confirmed via a user crash report (talking to an NPC — DialogueMenu
+    // live on the stack, our DLL sitting directly between MenuManager and
+    // GFxMovieRoot::Advance): without this check, a stray DialogueMenu tick landing
+    // here while those flags happen to be stale-true would hit a_menu->uiMovie —
+    // DialogueMenu's own live movie, not ours — and GfxInit/GfxUpdate would inject
+    // our clips into it / corrupt its GFx state. Verify identity before touching
+    // anything; a momentary false negative here (skipping a real LoadingMenu tick)
+    // is harmless, unlike a false positive.
+    if (a_menu != RE::UI::GetSingleton()->GetMenu(RE::LoadingMenu::MENU_NAME).get())
+        return;
+
     auto* mv = a_menu->uiMovie.get();
     if (!mv) { g_gfxCreated = false; g_customSwf = false; return; }
 
