@@ -1,16 +1,17 @@
 # Skyrim Loading Percent
 
-An SKSE plugin that draws a live animation and a real-time load percentage on Skyrim SE/AE loading screens. Progress is measured from the current load only — save-file bytes parsed against the save's exact file size, and cell references attached against the real reference count of the cells being loaded. No history, no learned estimates, no time-based guessing. It renders directly into the loading-screen Scaleform movie — so it does **not** hook Direct3D and stays out of the way of ENB, upscalers, and other overlays.
+An SKSE plugin that draws a live animation and a real-time load percentage on Skyrim SE/AE loading screens. Progress climbs from the current load's real data — save-file bytes parsed against the save's exact file size, and cell references attached against the real reference count of the cells being loaded — never a fixed timer or a fake bar. The last stretch of a load (asset/navmesh initialization, after streaming has finished and there's no further data left to measure) is paced by a short, self-calibrating estimate of how long that stretch typically takes *on your own PC*, learned from your recent load times, so the bar keeps moving smoothly to 100 instead of stalling. It renders directly into the loading-screen Scaleform movie — so it does **not** hook Direct3D and stays out of the way of ENB, upscalers, and other overlays.
 
 ## Features
 
 - 20 original hand-coded animations (Nordic Runes, Constellation, Standing Stone, Word Wall, Dwemer Cogs, Daedric Portal, and more)
-- Live percentage readout driven by real measured progress (save-file parse + cell-reference attach), rendered in Skyrim's own UI font
+- Live percentage readout driven by real measured progress (save-file parse + cell-reference attach, paced through the signal-less tail by a self-calibrating per-PC estimate), rendered in Skyrim's own UI font
 - Fully configurable in-game via an **MCM** (SkyUI Mod Configuration Menu)
 - Random-animation-each-load mode
-- Position presets plus fine X/Y offset, independent animation and text size, opacity, and color
+- 6 position presets (four corners + top/bottom center) plus fine X/Y offset, independent animation and text size, opacity, and color
 - Optional "hold at 100% until a key is pressed" with a pulsing "Press any key" prompt
 - Configurable linger timer — stay at 100% for N seconds before the screen closes
+- Flagged as a Light Master (ESL) — doesn't consume a full plugin slot in your load order
 
 ## Requirements
 
@@ -57,6 +58,7 @@ The overlay is drawn through Scaleform (GFx) into the loading-screen movie — t
 | PureDark Upscaler (AIO & older per-game builds) | Compatible |
 | Other upscaling / frame-generation mods | Should be compatible, but please comment! |
 | Loading-screen replacers (`LoadingMenu.swf`) | Compatible — this mod ships no SWF of its own; the overlay draws into whatever loading movie is active |
+| No Grass In Objects (grass cache generation) | Compatible — the plugin detects an in-progress `PrecacheGrass` run and stays fully inactive (no hooks, no overlay) so it can't interfere |
 
 ## Building
 

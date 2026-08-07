@@ -19,7 +19,7 @@ public:
     bool includeNonLoreAnims{ false };
 
     // Where to draw the widget
-    // 0=Bottom-Right  1=Bottom-Left  2=Bottom-Center  3=Top-Right  4=Top-Left
+    // 0=Bottom-Right  1=Bottom-Left  2=Bottom-Center  3=Top-Right  4=Top-Left  5=Top-Center
     int position{ 1 };
 
     // Show the animation widget at all (false = percentage tracking still works,

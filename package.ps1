@@ -1,6 +1,6 @@
 # package.ps1 — builds a release zip ready for MO2 / Vortex installation
-# Usage: .\package.ps1 [-Version "3.0.0"]
-param([string]$Version = "3.0.0")
+# Usage: .\package.ps1 [-Version "3.1.0"]
+param([string]$Version = "3.1.0")
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
