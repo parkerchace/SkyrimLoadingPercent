@@ -30,8 +30,11 @@ Copy-Item "$root\Scripts\SkyrimLoadingPercentMCM.pex"            "$data\Scripts\
 # MCM-Helper config
 Copy-Item "$root\MCM\Config\SkyrimLoadingPercent\config.json"    "$data\MCM\Config\SkyrimLoadingPercent\"
 Copy-Item "$root\MCM\Config\SkyrimLoadingPercent\settings.ini"   "$data\MCM\Config\SkyrimLoadingPercent\"
-# FOMOD meta so MO2/Vortex show name/version/author
+# FOMOD meta so MO2/Vortex show name/version/author, + ModuleConfig.xml so it's a
+# valid scripted FOMOD (MO2's simple installer misdetects a bare info.xml sitting
+# next to a top-level Data\ folder as an invalid archive layout)
 Copy-Item "$root\fomod\info.xml"                                 "$pkg\fomod\"
+Copy-Item "$root\fomod\ModuleConfig.xml"                         "$pkg\fomod\"
 # Docs / attribution
 Copy-Item "$root\README.md"                                      "$pkg\"
 Copy-Item "$root\CREDITS.md"                                     "$pkg\"
