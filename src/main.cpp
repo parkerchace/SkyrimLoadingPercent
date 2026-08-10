@@ -78,7 +78,7 @@ void SetupLog() {
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     SetupLog();
-    logger::info("SkyrimLoadingPercent v3.1.0 loading");
+    logger::info("SkyrimLoadingPercent v3.1.1 loading");
 
     SKSE::Init(a_skse);
 
