@@ -16,3 +16,6 @@ tools/
 *.user
 *.suo
 *.code-workspace
+
+# Personal machine-specific CMake settings
+CMakeUserPresets.json

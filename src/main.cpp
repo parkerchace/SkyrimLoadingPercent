@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Parker Chace
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Additional permissions under GPL-3.0 section 7 apply; see EXCEPTIONS.md.
+
 #include "PCH.h"
 #include "config/Settings.h"
 #include "hooks/FileIOHook.h"
@@ -59,6 +63,15 @@ void MessageListener(SKSE::MessagingInterface::Message* a_msg) {
     }
 }
 
+const char* RuntimeName(REL::Module::Runtime a_runtime) {
+    switch (a_runtime) {
+        case REL::Module::Runtime::AE: return "AE";
+        case REL::Module::Runtime::SE: return "SE";
+        case REL::Module::Runtime::VR: return "VR";
+        default:                       return "unknown";
+    }
+}
+
 void SetupLog() {
     auto logsPath = SKSE::log::log_directory();
     if (!logsPath) {
@@ -78,9 +91,30 @@ void SetupLog() {
 
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     SetupLog();
-    logger::info("SkyrimLoadingPercent v3.1.1 loading");
+
+    // Name and version come from the SKSEPluginInfo block CMake generates from
+    // project(VERSION ...), so the log line can't drift from the real build.
+    if (const auto* decl = SKSE::PluginDeclaration::GetSingleton()) {
+        logger::info("{} v{} loading", decl->GetName(), decl->GetVersion().string("."));
+    }
 
     SKSE::Init(a_skse);
+
+    // This build targets current Skyrim: Anniversary Edition (1.6.x through
+    // 1.7.104) and Skyrim VR. CommonLibSSE-NG is compiled without the pre-AE
+    // 1.5.97 struct layouts, so on that runtime every offset we read would be
+    // wrong. SKSE still loads us there — the plugin declares Address Library
+    // version independence, which says nothing about which layouts were built
+    // in — so refuse explicitly instead of crashing on the first cell access.
+    const auto runtime = REL::Module::GetRuntime();
+    logger::info("Skyrim runtime: {} {}", RuntimeName(runtime),
+                 REL::Module::get().version().string("."));
+    if (runtime == REL::Module::Runtime::SE) {
+        logger::critical("Skyrim SE 1.5.97 is not supported by this build. Use "
+                         "SkyrimLoadingPercent 3.1.1, the last release built for "
+                         "pre-Anniversary Edition.");
+        return false;
+    }
 
     if (IsGrassGenerationMode()) {
         logger::info("PrecacheGrass.txt detected — grass cache generation in progress; "
