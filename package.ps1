@@ -1,10 +1,14 @@
 # package.ps1 — builds a release zip ready for MO2 / Vortex installation
-# Usage: .\package.ps1 [-Version "4.0.0"]
-param([string]$Version = "4.0.0")
+# Usage: .\package.ps1 [-Version "4.0.0"] [-OutDir <path>]
+param(
+    [string]$Version = "4.0.0",
+    [string]$OutDir  = ""
+)
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$out  = "$root\dist"
+$out  = if ($OutDir) { $OutDir } else { "$root\dist" }
+if (-not (Test-Path $out)) { New-Item -ItemType Directory -Force $out | Out-Null }
 $pkg  = "$out\SkyrimLoadingPercent-$Version"
 $data = "$pkg\Data"
 
@@ -42,14 +46,16 @@ Copy-Item "$root\MCM\Config\SkyrimLoadingPercent\settings.ini"   "$data\MCM\Conf
 # next to a top-level Data\ folder as an invalid archive layout)
 Copy-Item "$root\fomod\info.xml"                                 "$pkg\fomod\"
 Copy-Item "$root\fomod\ModuleConfig.xml"                         "$pkg\fomod\"
-# Docs / attribution. COPYING.txt and EXCEPTIONS.md must ship with the binary:
-# the GPL requires the license text to travel with the distributed work, and the
-# additional permissions are only in force if the recipient actually has them.
-Copy-Item "$root\README.md"                                      "$pkg\"
+# Licensing. These are not optional extras: the GPL requires its text to travel
+# with the distributed work, the additional permissions only bind if the
+# recipient actually has them, and the MIT/BSD libraries statically linked into
+# the DLL require their notices to accompany the binary.
+# README.md is deliberately not shipped - the Nexus description page carries it.
 Copy-Item "$root\CREDITS.md"                                     "$pkg\"
 Copy-Item "$root\LICENSE"                                        "$pkg\"
 Copy-Item "$root\COPYING.txt"                                    "$pkg\"
 Copy-Item "$root\EXCEPTIONS.md"                                  "$pkg\"
+Copy-Item "$root\THIRD-PARTY-LICENSES.txt"                       "$pkg\"
 
 # Zip it
 $zip = "$out\SkyrimLoadingPercent-$Version.zip"
